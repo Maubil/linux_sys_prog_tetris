@@ -40,6 +40,7 @@ For interactive programs it is often useful to handle input differently than in 
 When exiting the terminal the old settings need to be applied again manually or the user is left with a very odd-behaving command prompt (i.e., the attributes remain set even after the application exits). One can reinitialize the terminal’s settings by calling reset(1) (“blindly”).
 
 The example below shows how to react to arrow keys and how backspace can be implemented manually. To do so, one has to parse the multi-byte long input strings - the so-called ANSI/VT100 Escape Codes.
+
 [vt100_arrowkeys.c](https://cis.technikum-wien.at/documents/mes/1/sec/semesterplan/em2/listings/vt100_arrowkeys.c)
 
 The other direction is also possible: by emitting certain escape sequences a program can control the terminal. For example, using puts("\033[2J"); clears the current screen similar to what the execution of clear(1) through system(3) would do.
@@ -48,25 +49,28 @@ More comfortable is the use of a fully-fledged library designed for these purpos
 
 # Game Logic Implementation
 If you want to avoid the fun of implementing the game logic itself and concentrate on the system programming aspects you may use the code below. The file game.h specifies the interface to the respective module game.c and needs to be integrated into your project. game_test.c briefly shows how its functions need to be called to make progress in the game (although in a nonsensical way).
+
 [game.h](https://cis.technikum-wien.at/documents/mes/1/sec/semesterplan/em2/listings/game.h)
+
 [game.c](https://cis.technikum-wien.at/documents/mes/1/sec/semesterplan/em2/listings/game.c)
+
 [game_test.c](https://cis.technikum-wien.at/documents/mes/1/sec/semesterplan/em2/listings/game_test.c)
 
 # Grading
 Initially, you will receive 80 points. However, various amounts of points will be deducted for failing to fulfill the following constraints.
 
--100 Points: The application has to implement all mandatory features as listed in the specification.
--30 Points: The application does only use functionality provided by C99 (or later) and POSIX.1-2008 (or later) apart from explicit exceptions stated in the specification.
--30 Points: The application should never crash, behave erratically or hang in my test environment due to programming errors (NULL pointer dereferences, missing synchronization, undefined C behavior etc). Experience shows that focusing on testing instead of optional features will probably lead to a better grade - this is on purpose.
--20 Points: The delivery shall be exactly as described above and contain no superfluous binary files such as generated object files or application (but images or other data files required by your program are fine of course).
--20 Points: The modules of your program have to compile without warnings using the options -std=c99 -Wall -pedantic in gcc and clang.
--20 Points: You have to supply a proper Makefile whose default target builds all binaries of the project. Additionally, there has to be a clean target that removes all generated files.
--10 Points: Implement your program in sensible modules.
--10 Points: Split your program in a reasonable amount of functions. Avoid spaghetti code.
--10 Points: Every function must be documented above its header with a brief description of the respective function, its parameters and return values. You may use Doxygen (optional).
--1 Point for each occurrence: Check the return values of each function and do something meaningful with them (if ignoring them is the most sensible option you optionally may cast the result value to void (e.g., printf(), fprintf(stdout,…​))).
--1 Point for each occurrence: Print meaningful error messages upon failure of a function. Use perror() and strerror() where applicable.
--pow(2, d) Points where d is the number of commenced days after the official deadline (e.g., deadline 1.1. 09:00; delivery 1.1. 10:00: -2 points, delivery 4.1. 9:00: -8 points).
+⋅⋅* -100 Points: The application has to implement all mandatory features as listed in the specification.
+⋅⋅* -30 Points: The application does only use functionality provided by C99 (or later) and POSIX.1-2008 (or later) apart from explicit exceptions stated in the specification.
+⋅⋅* -30 Points: The application should never crash, behave erratically or hang in my test environment due to programming errors (NULL pointer dereferences, missing synchronization, undefined C behavior etc). Experience shows that focusing on testing instead of optional features will probably lead to a better grade - this is on purpose.
+⋅⋅* -20 Points: The delivery shall be exactly as described above and contain no superfluous binary files such as generated object files or application (but images or other data files required by your program are fine of course).
+⋅⋅* -20 Points: The modules of your program have to compile without warnings using the options -std=c99 -Wall -pedantic in gcc and clang.
+⋅⋅* -20 Points: You have to supply a proper Makefile whose default target builds all binaries of the project. Additionally, there has to be a clean target that removes all generated files.
+⋅⋅* -10 Points: Implement your program in sensible modules.
+⋅⋅* -10 Points: Split your program in a reasonable amount of functions. Avoid spaghetti code.
+⋅⋅* -10 Points: Every function must be documented above its header with a brief description of the respective function, its parameters and return values. You may use Doxygen (optional).
+⋅⋅* -1 Point for each occurrence: Check the return values of each function and do something meaningful with them (if ignoring them is the most sensible option you optionally may cast the result value to void (e.g., printf(), fprintf(stdout,…​))).
+⋅⋅* -1 Point for each occurrence: Print meaningful error messages upon failure of a function. Use perror() and strerror() where applicable.
+⋅⋅* -pow(2, d) Points where d is the number of commenced days after the official deadline (e.g., deadline 1.1. 09:00; delivery 1.1. 10:00: -2 points, delivery 4.1. 9:00: -8 points).
 
 The deadline for the submission of your solution of the project is 2017-12-03 00:00 (neither 23:59 nor 24:00).
 

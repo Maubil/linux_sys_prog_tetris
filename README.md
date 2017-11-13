@@ -13,10 +13,10 @@ At the beginning of each game, the current ten highest scores should be displaye
 
 # Invocation
 The server has to be started by using the syntax listed below.
-tetris_server [-p <port>] [-h]
+tetris_server [-p \<port\>] [-h]
 
 The client should be executed identically like so:
-tetris_client [-i <server ip>] [-p <server port>] [-h]
+tetris_client [-i \<server ip\>] [-p \<server port\>] [-h]
 
 The value of the -p option specifies the TCP port of the socket that server shall listen to. The server shall listen on all possible interfaces in case there are more than one. The client allows to specify the server IP address to connect to additionally to the destination port. If the IP is missing 127.0.0.1 shall be used on default. Also, select a suitable default port number (anything but 31457…​ why?).
 

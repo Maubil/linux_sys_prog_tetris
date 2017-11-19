@@ -5,13 +5,16 @@
 #include <netdb.h>
 
 static void print_usage(const char *prog_name);
-static void find_server_ip(const char *ip_addr);
+static SOCK init_connection(const char *server_ip, const char *server_port);
+static int read_server(SOCKET sock, char *buffer);
+static void write_server(SOCKET sock, const char *buffer);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
     char *server_ip = "127.0.0.1";
-    int server_port = 30001;
+    char *server_port = "30001";
+    SOCKET sock = 0;
 
     /* tetris_client [-i <server ip>] [-p <server port>] [-h]
     The value of the -p option specifies the TCP port of the socket that server shall listen to. 
@@ -34,9 +37,9 @@ int main(int argc, char *argv[])
 
             case 'p':
                 /* user passed server port */
-                server_port = atoi(optarg);
-                /* only allow user ranged ports */
-                if(server_port >= 65535 || server_port <= 1024)
+                int check_port = atoi(optarg);
+                /* only allow user ranged ports and not terinet port */
+                if(check_port >= 65535 || check_port <= 1024 || check_port == 31457)
                 {
                     print_usage(argv[0]);
                     return 1;
@@ -56,34 +59,70 @@ int main(int argc, char *argv[])
     }
 
     /* we are ready to start the game */
-    find_server_ip(server_ip);
-    (void)server_port;
+    sock = init_connection(server_ip, server_port);
 
+    char server_data[BUF_SIZE] = "";
+    while(server_data[0] != 'q')
+    {
+        printf()
+    }
+
+    closesocket(sock);
     return 0;
 }
 
-static void find_server_ip(const char *ip_addr)
+/*! \brief Initialize the connection to the remote server.
+    \param server_ip    server IP string formatted.
+    \param server_port  server port string formatted.
+    \return socket number
+    \other  inspired by the getaddrinfo manual example.
+*/
+static SOCK init_connection(const char *server_ip, const char *server_port)
 {
-    struct addrinfo *servinfo = NULL;
-    int ret = getaddrinfo(ip_addr, NULL, NULL, &servinfo);
-    if(ret != 0)
-    {
+    struct addrinfo hints;
+    struct addrinfo *result, *rp;
+    int s;
+    SOCKET sfd;
+
+    /* Obtain address(es) matching host/port */
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;          /* Any protocol */
+
+    s = getaddrinfo(server_ip, server_port, &hints, &result);
+    if (s != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
         exit(EXIT_FAILURE);
     }
-    
-    /* loop through all DNS results */
-    struct addrinfo *p = NULL;
-    for(p = servinfo; p != NULL; p = p->ai_next)
+
+    /* getaddrinfo() returns a list of address structures.
+        Try each address until we successfully connect(2).
+        If socket(2) (or connect(2)) fails, we (close the socket
+        and) try the next address. */
+
+    for (rp = result; rp != NULL; rp = rp->ai_next)
     {
-        char ipstr[8*4 + 7 + 1] = "";
+        sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sfd == -1)
+            continue;
 
-        if (p->ai_family == AF_INET)
-        {
-            struct sockaddr_in *s = NULL;
-        }
+        if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
+            break;                  /* Success */
 
+        close(sfd);
     }
-    
+
+    if (rp == NULL)     /* No address succeeded */
+    {
+        fprintf(stderr, "Could not connect\n");
+        exit(EXIT_FAILURE);
+    }
+
+    freeaddrinfo(result);           /* No longer needed */
+
+    return sfd;
 }
 
 static void print_usage(const char *prog_name)
@@ -96,6 +135,29 @@ static void print_usage(const char *prog_name)
                     prog_name);
 }
 
+static int read_server(SOCKET sock, char *buffer)
+{
+   int n = 0;
+
+   if((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
+   {
+      perror("recv()");
+      exit(errno);
+   }
+
+   buffer[n] = 0;
+
+   return n;
+}
+
+static void write_server(SOCKET sock, const char *buffer)
+{
+   if(send(sock, buffer, strlen(buffer), 0) < 0)
+   {
+      perror("send()");
+      exit(errno);
+   }
+}
 
 
 /* #include <stdio.h>

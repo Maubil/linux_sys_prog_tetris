@@ -3,7 +3,7 @@ SOURCES = $(wildcard src/*.c)
 OBJECTS = $(SOURCES:.c=.o)
 
 CC ?= gcc
-CC_FLAGS ?= -std=c99 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200112L
+CC_FLAGS ?= -std=c99 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200809L
 LD_FLAGS ?= -lm
 
 all: $(EXEC)

@@ -6,30 +6,37 @@
 #define CLIENT_ID (0)
 #define DELAY_MS (10)
 
-static void draw_field(const char field[FIELD_HEIGHT][FIELD_WIDTH]) {
+static void draw_field(const char field[FIELD_HEIGHT][FIELD_WIDTH]) 
+{
     printf("/");
-    for (size_t j = 0; j < FIELD_WIDTH; j++) {
+    for (size_t j = 0; j < FIELD_WIDTH; j++) 
+    {
         printf("-");
     }
     printf("\\\n");
-    for (size_t i = 0; i < FIELD_HEIGHT; i++) {
+    for (size_t i = 0; i < FIELD_HEIGHT; i++) 
+    {
         printf("|");
-        for (size_t j = 0; j < FIELD_WIDTH; j++) {
+        for (size_t j = 0; j < FIELD_WIDTH; j++) 
+        {
             printf("%c", field[i][j]);
         }
         printf("|\n");
     }
     printf("\\");
-    for (size_t j = 0; j < FIELD_WIDTH; j++) {
+    for (size_t j = 0; j < FIELD_WIDTH; j++) 
+    {
         printf("-");
     }
     printf("/");
     printf("\n");
 }
 
-int main (void) {
+int main (void) 
+{
     init_game(CLIENT_ID);
-    while (1) {
+    while (1) 
+    {
         struct game_state *gs = NULL;
 
         /* Move current block one column left or right */
@@ -40,11 +47,13 @@ int main (void) {
         unsigned int substeps = rand() % (2 * STEP_TIME_INIT/STEP_TIME_GRANULARITY);
         /* Do up to 200% of substeps required for one full time step.
          * Thus for every step right/left above, do up to two steps down. */
-        for (size_t i = 0; i < substeps; i++) {
+        for (size_t i = 0; i < substeps; i++) 
+        {
             gs = handle_substep(CLIENT_ID);
         }
         draw_field(*gs->field);
-        if (gs->phase == TET_LOSE || gs->phase == TET_WIN) {
+        if (gs->phase == TET_LOSE || gs->phase == TET_WIN) 
+        {
             fprintf(stderr,
                     "Player %s with %u points in level %u.\n",
                     gs->phase == TET_WIN ? "wins" : "loses",

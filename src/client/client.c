@@ -1,13 +1,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
-#include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/types.h>          /* See NOTES */
+#include <sys/socket.h>
+#include <unistd.h>
+#include <termios.h>
+#include <string.h>
+#include <errno.h>
+
+#define BUF_SIZE 255
+
+typedef int SOCKET;
 
 static void print_usage(const char *prog_name);
-static SOCK init_connection(const char *server_ip, const char *server_port);
+static SOCKET init_connection(const char *server_ip, const char *server_port);
 static int read_server(SOCKET sock, char *buffer);
 static void write_server(SOCKET sock, const char *buffer);
+int game_session(SOCKET sock);
 
 int main(int argc, char *argv[])
 {
@@ -15,6 +25,7 @@ int main(int argc, char *argv[])
     char *server_ip = "127.0.0.1";
     char *server_port = "30001";
     SOCKET sock = 0;
+    int check_port = 0;
 
     /* tetris_client [-i <server ip>] [-p <server port>] [-h]
     The value of the -p option specifies the TCP port of the socket that server shall listen to. 
@@ -37,7 +48,7 @@ int main(int argc, char *argv[])
 
             case 'p':
                 /* user passed server port */
-                int check_port = atoi(optarg);
+                check_port = atoi(optarg);
                 /* only allow user ranged ports and not terinet port */
                 if(check_port >= 65535 || check_port <= 1024 || check_port == 31457)
                 {
@@ -61,13 +72,9 @@ int main(int argc, char *argv[])
     /* we are ready to start the game */
     sock = init_connection(server_ip, server_port);
 
-    char server_data[BUF_SIZE] = "";
-    while(server_data[0] != 'q')
-    {
-        printf()
-    }
+    int rc = game_session(sock);
 
-    closesocket(sock);
+    close(sock);
     return 0;
 }
 
@@ -77,7 +84,7 @@ int main(int argc, char *argv[])
     \return socket number
     \other  inspired by the getaddrinfo manual example.
 */
-static SOCK init_connection(const char *server_ip, const char *server_port)
+static SOCKET init_connection(const char *server_ip, const char *server_port)
 {
     struct addrinfo hints;
     struct addrinfo *result, *rp;
@@ -87,7 +94,7 @@ static SOCK init_connection(const char *server_ip, const char *server_port)
     /* Obtain address(es) matching host/port */
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_socktype = SOCK_STREAM; /* Stream socket */
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
 
@@ -106,10 +113,16 @@ static SOCK init_connection(const char *server_ip, const char *server_port)
     {
         sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sfd == -1)
+        {
             continue;
+        }
 
         if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
-            break;                  /* Success */
+        {
+            /* success */
+            printf("I am connected to host!\n");
+            break;
+        }
 
         close(sfd);
     }
@@ -152,64 +165,70 @@ static int read_server(SOCKET sock, char *buffer)
 
 static void write_server(SOCKET sock, const char *buffer)
 {
-   if(send(sock, buffer, strlen(buffer), 0) < 0)
-   {
-      perror("send()");
-      exit(errno);
-   }
-}
-
-
-/* #include <stdio.h>
-#include <termios.h>
-
-int main (void) {
-  // Variables to store the previous and new terminal attributes
-  static struct termios oldterm, newterm;
-
-  // Save the old ones and disable canonical mode + echoing
-  tcgetattr(0, &oldterm);
-  newterm = oldterm;
-  newterm.c_lflag &= ~ICANON;
-  newterm.c_lflag &= ~ECHO;
-  tcsetattr(0, TCSANOW, &newterm);
-
-  while (1) {
-    char c = getchar();
-
-    if (c == 0x1B) {
-      // 0x1B ("ESC") indicates the start of an escape sequence
-
-      // Store escape sequence in variable esc
-      int esc = ((getchar() & 0xFF) << 8) | (getchar() & 0xFF);
-
-      // Behave differently depending on which key was pressed
-      switch (esc) {
-          case 0x5B41: printf("up\n"); break;
-          case 0x5B42: printf("down\n"); break;
-          case 0x5B43: printf("right\n"); break;
-          case 0x5B44: printf("left\n"); break;
-      }
-    } else if (c == 0x7f) {
-      // 0x7f indicates backspace
-
-      // Move cursor one char left
-      printf("\b");
-      // Overwrite it with a space
-      printf(" ");
-      // Move cursor back again for new user input at "deleted" position
-      printf("\b");
-    } else if (c == 'q') {
-      // Exit loop on 'q'
-      break;
-    } else {
-        printf("%c", c);
+    if(send(sock, buffer, strlen(buffer), 0) < 0)
+    {
+        perror("send()");
+        exit(errno);
     }
-  }
-
-  // Restore previous terminal settings on exit
-  tcsetattr(0, TCSANOW, &oldterm);
-
-  return 0;
 }
-*/
+
+int game_session(SOCKET sock)
+{
+    // Variables to store the previous and new terminal attributes
+    static struct termios oldterm, newterm;
+
+    // Save the old ones and disable canonical mode + echoing
+    tcgetattr(0, &oldterm);
+    newterm = oldterm;
+    newterm.c_lflag &= ~ICANON;
+    newterm.c_lflag &= ~ECHO;
+    tcsetattr(0, TCSANOW, &newterm);
+
+    while (1) 
+    {
+        char c = getchar();
+
+        write_server(sock, "Helloooooo");
+
+        if (c == 0x1B) 
+        {
+            // 0x1B ("ESC") indicates the start of an escape sequence
+
+            // Store escape sequence in variable esc
+            int esc = ((getchar() & 0xFF) << 8) | (getchar() & 0xFF);
+
+            // Behave differently depending on which key was pressed
+            switch (esc) {
+                case 0x5B41: printf("up\n"); break;
+                case 0x5B42: printf("down\n"); break;
+                case 0x5B43: printf("right\n"); break;
+                case 0x5B44: printf("left\n"); break;
+            }
+        } 
+        else if (c == 0x7f) 
+        {
+            // 0x7f indicates backspace
+            write_server(sock, "Helloooooo");
+            // Move cursor one char left
+            printf("\b");
+            // Overwrite it with a space
+            printf(" ");
+            // Move cursor back again for new user input at "deleted" position
+            printf("\b");
+        } 
+        else if (c == 'q') 
+        {
+            // Exit loop on 'q'
+            break;
+        } 
+        else 
+        {
+            printf("%c", c);
+        }
+    }
+
+    // Restore previous terminal settings on exit
+    tcsetattr(0, TCSANOW, &oldterm);
+
+    return 0;
+}

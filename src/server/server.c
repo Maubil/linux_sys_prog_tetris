@@ -22,8 +22,6 @@ int game_session(SOCKET sock);
 int main(int argc, char *argv[])
 {
     char c = 0;
-    char *server_port = "30001";
-    SOCKET sock = 0;
     int check_port = 0;
 
     /* tetris_client [-i <server ip>] [-p <server port>] [-h]
@@ -63,7 +61,56 @@ int main(int argc, char *argv[])
         }
     }
 
-    close(sock);
+    struct sockaddr_in myaddr ,clientaddr;
+    int sockid = socket(AF_INET, SOCK_STREAM, 0);
+    memset(&myaddr, '0', sizeof(myaddr));
+    myaddr.sin_family=AF_INET;
+    myaddr.sin_port=htons(check_port);
+    myaddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+    if(sockid==-1)
+    {
+        perror("socket");
+    }
+    int len=sizeof(myaddr);
+    if(bind(sockid,( struct sockaddr*)&myaddr,len)==-1)
+    {
+        perror("bind");
+    }
+    if(listen(sockid,10)==-1)
+    {
+        perror("listen");
+    }
+
+    for(;;)
+    {
+        printf("Accepting connections!\n");
+        int new = accept(sockid, (struct sockaddr *)&clientaddr, &len);
+
+        int pid = fork();
+        if (pid < 0)
+        {
+            close(new);
+            printf("Fork failed closing socket!\n");
+            continue;
+        }
+        else if(pid == 0)
+        {
+            /* blocking call */
+            int rc = child_process(new);
+            printf("Child terminated!\n");
+            close(new);
+            break;
+        }
+        else
+        {
+            close(new);
+            printf("Parent process!\n");
+            continue;
+        }
+    }
+
+    printf("Exiting for loop now!\n");
+    close(sockid);
     return 0;
 }
 
@@ -98,4 +145,16 @@ static void write_server(SOCKET sock, const char *buffer)
         perror("send()");
         exit(errno);
     }
+}
+
+
+int child_process(SOCKET sock)
+{
+    char buf[100];
+    static int counter = 0;
+
+    printf("Child just forked!\n");
+    snprintf(buf, sizeof buf, "hi %d", counter++);
+    send(sock, buf, strlen(buf), 0);
+    return 0;
 }

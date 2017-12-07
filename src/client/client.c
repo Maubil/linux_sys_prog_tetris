@@ -2,10 +2,9 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <netdb.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <termios.h>
 #include <string.h>
 #include <errno.h>
 #include <ncurses.h>
@@ -13,6 +12,8 @@
 #include "../game.h"
 
 #define BUF_SIZE 255
+#define WIN_POS_X 10
+#define WIN_POS_Y 1
 
 static void print_usage(const char *prog_name);
 static int init_connection(const char *server_ip, const char *server_port);
@@ -65,6 +66,7 @@ int main(int argc, char *argv[])
     int rc = game_session(sock);
 
     close(sock);
+    finish(0);
     return 0;
 }
 
@@ -110,20 +112,20 @@ static int init_connection(const char *server_ip, const char *server_port)
         if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
         {
             /* success */
-            printf("I am connected to host!\n");
+            printf("Connected to server!\n");
             break;
         }
 
         close(sfd);
     }
 
+    freeaddrinfo(result);
+
     if (rp == NULL)     /* No address succeeded */
     {
         fprintf(stderr, "Could not connect\n");
         exit(EXIT_FAILURE);
     }
-
-    freeaddrinfo(result);           /* No longer needed */
 
     return sfd;
 }
@@ -146,22 +148,39 @@ static int game_session(int sock)
     noecho();
     keypad(stdscr, TRUE);
     nodelay(stdscr, TRUE);
-    char c = 0;
-    while (true)
+    int ch = 0;
+    int row = 0;
+    int col = 0;
+
+
+    WINDOW *my_win;
+
+	refresh();
+    getmaxyx(stdscr,row,col);
+    printw("row: %d\tcol: %d!", row, col);
+
+	my_win = newwin(FIELD_HEIGHT + 2, FIELD_WIDTH + 2, WIN_POS_X, WIN_POS_Y);
+	box(my_win, 0 , 0);
+    mvwprintw(my_win, 1, 1,"1234567890");
+	wrefresh(my_win);
+
+    while ((ch = getch()) != 'q')
     {
     //TET_CCLOCK,       /* Rotates the current block counterclockwise */
     //TET_CHEAT,        /* Changes the current block to another shape */
     //TET_PAUSE,        /* Pauses/unpauses the current game */
     //TET_FASTER,       /* Increases the pace of the game a bit */
     //TET_SLOWER,*/
-        switch(getch())
+        switch(ch)
         {
             case KEY_UP:
                 user_input = TET_CLOCK;
                 printw("up!");
+                mvwprintw(my_win, 1, 1,"0987654321");
                 break;
             case KEY_DOWN:
                 user_input = TET_DOWN;
+                mvwprintw(my_win, 1, 1,"1234567890");
                 printw("down!");
                 break;
             case KEY_LEFT:
@@ -176,19 +195,18 @@ static int game_session(int sock)
                 user_input = TET_RESTART;
                 printw("r was pressed\n");
                 break;
-            case 'q':
-                printw("q was pressed\n");
-                finish(0);
-                break;
             case ' ':
                 user_input = TET_DOWN_INSTANT;
                 printw("space pressed!\n");
                 break;
             default:
                 user_input = TET_VOID;
-                printw("Nothing entered this time...\n");
+                //printw("Nothing entered this time...\n");
                 break;
         }
+        wrefresh(my_win);
+        mvprintw(row - 1, 0, "Worky worky ?");
+        refresh();
 /*
         if(send(sock, buffer, strlen(buffer), 0) < 0)
         {

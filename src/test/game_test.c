@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "game.h"
+#include "../game.h"
 
 #define CLIENT_ID (0)
 #define DELAY_MS (10)

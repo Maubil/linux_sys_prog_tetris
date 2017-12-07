@@ -2,12 +2,13 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <netdb.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <termios.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 
 #define BUF_SIZE 255
 
@@ -17,23 +18,14 @@ static void print_usage(const char *prog_name);
 static int read_server(SOCKET sock, char *buffer);
 static void write_server(SOCKET sock, const char *buffer);
 static int child_process(SOCKET sock);
+static void finish(int sig);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
     int check_port = 30001;
 
-    /* tetris_client [-i <server ip>] [-p <server port>] [-h]
-    The value of the -p option specifies the TCP port of the socket that server shall listen to. 
-    The server shall listen on all possible interfaces in case there are more than one. 
-    The client allows to specify the server IP address to connect to additionally to the destination port. 
-    If the IP is missing 127.0.0.1 shall be used on default. Also, select a suitable default port number (anything but 31457…​ why?).
-
-    If the -h option is given either program should display a sensible usage message explaining the syntax and exit afterwards. 
-    An illegal IP or port address should also trigger the display of the usage message and a termination. 
-    Both application should return with 0 on success or 1 if there are any errors (including but not limited to illegal IPs/ports). 
-    Use getopt(3) to handle the arguments.
-    */
+    (void) signal(SIGINT, finish);
 
     while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
         switch ( c ) {
@@ -147,7 +139,6 @@ static void write_server(SOCKET sock, const char *buffer)
     }
 }
 
-
 static int child_process(SOCKET sock)
 {
     char buf[100];
@@ -157,4 +148,14 @@ static int child_process(SOCKET sock)
     snprintf(buf, sizeof buf, "hi %d", counter++);
     send(sock, buf, strlen(buf), 0);
     return 0;
+}
+
+static void finish(int sig)
+{
+    endwin();
+    /* do your non-curses wrapup here */
+
+    printf("Bye!\n");
+
+    exit(0);
 }

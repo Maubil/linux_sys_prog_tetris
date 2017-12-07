@@ -1,6 +1,22 @@
 #ifndef GAME_H
 #define GAME_H
 
+/***********************************************************************
+ * Interface to an implementation of a Tetris game logic.
+ * It supports up to CLIENTS_MAX parallel games that have to be
+ * progressed by calling the 3 functions specified below.
+ * At the start of each game you have to call init_game() with the ID
+ * of the game (0..CLIENTS_MAX-1).
+ * After that until the end of the game you have to execute
+ * handle_substep() at equidistant intervals of STEP_TIME_GRANULARITY
+ * milliseconds.
+ * Additionally, you need to inform the implementation about user
+ * interaction by calling handle_input() for each user action.
+ * Both functions return a pointer to struct game_state that contains
+ * information of the current state of the respective game such as
+ * achieved points or if the player has won or lost (cf. enum tet_phase)
+ ***********************************************************************/
+
 /* Maximum number of concurrent games */
 #define CLIENTS_MAX (5)
 

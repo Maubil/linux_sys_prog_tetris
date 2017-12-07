@@ -14,15 +14,14 @@
 typedef int SOCKET;
 
 static void print_usage(const char *prog_name);
-static SOCKET init_connection(const char *server_ip, const char *server_port);
 static int read_server(SOCKET sock, char *buffer);
 static void write_server(SOCKET sock, const char *buffer);
-int game_session(SOCKET sock);
+static int child_process(SOCKET sock);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
-    int check_port = 0;
+    int check_port = 30001;
 
     /* tetris_client [-i <server ip>] [-p <server port>] [-h]
     The value of the -p option specifies the TCP port of the socket that server shall listen to. 
@@ -97,6 +96,7 @@ int main(int argc, char *argv[])
         {
             /* blocking call */
             int rc = child_process(new);
+            (void)rc;
             printf("Child terminated!\n");
             close(new);
             break;
@@ -148,7 +148,7 @@ static void write_server(SOCKET sock, const char *buffer)
 }
 
 
-int child_process(SOCKET sock)
+static int child_process(SOCKET sock)
 {
     char buf[100];
     static int counter = 0;

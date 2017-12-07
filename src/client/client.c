@@ -29,7 +29,6 @@ int main(int argc, char *argv[])
 
     /* tetris_client [-i <server ip>] [-p <server port>] [-h]
     The value of the -p option specifies the TCP port of the socket that server shall listen to. 
-    The server shall listen on all possible interfaces in case there are more than one. 
     The client allows to specify the server IP address to connect to additionally to the destination port. 
     If the IP is missing 127.0.0.1 shall be used on default. Also, select a suitable default port number (anything but 31457…​ why?).
 
@@ -94,7 +93,7 @@ static SOCKET init_connection(const char *server_ip, const char *server_port)
     /* Obtain address(es) matching host/port */
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Stream socket */
+    hints.ai_socktype = SOCK_STREAM; /* stream socket */
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
 

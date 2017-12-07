@@ -8,35 +8,26 @@
 #include <termios.h>
 #include <string.h>
 #include <errno.h>
+#include <ncurses.h>
+#include <signal.h>
+#include "../game.h"
 
 #define BUF_SIZE 255
 
-typedef int SOCKET;
-
 static void print_usage(const char *prog_name);
-static SOCKET init_connection(const char *server_ip, const char *server_port);
-static int read_server(SOCKET sock, char *buffer);
-static void write_server(SOCKET sock, const char *buffer);
-int game_session(SOCKET sock);
+static int init_connection(const char *server_ip, const char *server_port);
+static int game_session(int sock);
+static void finish(int sig);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
     char *server_ip = "127.0.0.1";
     char *server_port = "30001";
-    SOCKET sock = 0;
     int check_port = 0;
+    int sock = 0;
 
-    /* tetris_client [-i <server ip>] [-p <server port>] [-h]
-    The value of the -p option specifies the TCP port of the socket that server shall listen to. 
-    The client allows to specify the server IP address to connect to additionally to the destination port. 
-    If the IP is missing 127.0.0.1 shall be used on default. Also, select a suitable default port number (anything but 31457…​ why?).
-
-    If the -h option is given either program should display a sensible usage message explaining the syntax and exit afterwards. 
-    An illegal IP or port address should also trigger the display of the usage message and a termination. 
-    Both application should return with 0 on success or 1 if there are any errors (including but not limited to illegal IPs/ports). 
-    Use getopt(3) to handle the arguments.
-    */
+    (void) signal(SIGINT, finish);
 
     while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
         switch ( c ) {
@@ -83,12 +74,12 @@ int main(int argc, char *argv[])
     \return socket number
     \other  inspired by the getaddrinfo manual example.
 */
-static SOCKET init_connection(const char *server_ip, const char *server_port)
+static int init_connection(const char *server_ip, const char *server_port)
 {
     struct addrinfo hints;
     struct addrinfo *result, *rp;
     int s;
-    SOCKET sfd;
+    int sfd;
 
     /* Obtain address(es) matching host/port */
     memset(&hints, 0, sizeof(struct addrinfo));
@@ -147,87 +138,83 @@ static void print_usage(const char *prog_name)
                     prog_name);
 }
 
-static int read_server(SOCKET sock, char *buffer)
+static int game_session(int sock)
 {
-   int n = 0;
-
-   if((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
-   {
-      perror("recv()");
-      exit(errno);
-   }
-
-   buffer[n] = 0;
-
-   return n;
-}
-
-static void write_server(SOCKET sock, const char *buffer)
-{
-    if(send(sock, buffer, strlen(buffer), 0) < 0)
+    enum tet_input user_input = TET_VOID;
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    nodelay(stdscr, TRUE);
+    char c = 0;
+    while (true)
     {
-        perror("send()");
-        exit(errno);
-    }
-}
-
-int game_session(SOCKET sock)
-{
-    // Variables to store the previous and new terminal attributes
-    static struct termios oldterm, newterm;
-
-    // Save the old ones and disable canonical mode + echoing
-    tcgetattr(0, &oldterm);
-    newterm = oldterm;
-    newterm.c_lflag &= ~ICANON;
-    newterm.c_lflag &= ~ECHO;
-    tcsetattr(0, TCSANOW, &newterm);
-
-    while (1) 
-    {
-        char c = getchar();
-
-        //write_server(sock, "Helloooooo");
-        printf("Blocking?\n");
-        if (c == 0x1B) 
+    //TET_CCLOCK,       /* Rotates the current block counterclockwise */
+    //TET_CHEAT,        /* Changes the current block to another shape */
+    //TET_PAUSE,        /* Pauses/unpauses the current game */
+    //TET_FASTER,       /* Increases the pace of the game a bit */
+    //TET_SLOWER,*/
+        switch(getch())
         {
-            // 0x1B ("ESC") indicates the start of an escape sequence
-
-            // Store escape sequence in variable esc
-            int esc = ((getchar() & 0xFF) << 8) | (getchar() & 0xFF);
-
-            // Behave differently depending on which key was pressed
-            switch (esc) {
-                case 0x5B41: printf("up\n"); break;
-                case 0x5B42: printf("down\n"); break;
-                case 0x5B43: printf("right\n"); break;
-                case 0x5B44: printf("left\n"); break;
-            }
-        } 
-        else if (c == 0x7f) 
-        {
-            // 0x7f indicates backspace
-            write_server(sock, "Helloooooo");
-            // Move cursor one char left
-            printf("\b");
-            // Overwrite it with a space
-            printf(" ");
-            // Move cursor back again for new user input at "deleted" position
-            printf("\b");
-        } 
-        else if (c == 'q') 
-        {
-            // Exit loop on 'q'
-            break;
-        } 
-        else 
-        {
-            printf("%c", c);
+            case KEY_UP:
+                user_input = TET_CLOCK;
+                printw("up!");
+                break;
+            case KEY_DOWN:
+                user_input = TET_DOWN;
+                printw("down!");
+                break;
+            case KEY_LEFT:
+                user_input = TET_LEFT;
+                printw("left!");
+                break;
+            case KEY_RIGHT:
+                user_input = TET_RIGHT;
+                printw("right!");
+                break;
+            case 'r':
+                user_input = TET_RESTART;
+                printw("r was pressed\n");
+                break;
+            case 'q':
+                printw("q was pressed\n");
+                finish(0);
+                break;
+            case ' ':
+                user_input = TET_DOWN_INSTANT;
+                printw("space pressed!\n");
+                break;
+            default:
+                user_input = TET_VOID;
+                printw("Nothing entered this time...\n");
+                break;
         }
+/*
+        if(send(sock, buffer, strlen(buffer), 0) < 0)
+        {
+            perror("send()");
+            finish(0);
+        }
+
+        if((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
+        {
+            perror("recv()");
+            finish(0);
+        }
+*/
+        // DRAW_FIELD!
+
+        napms(100);
     }
-
-    // Restore previous terminal settings on exit
-    tcsetattr(0, TCSANOW, &oldterm);
-
     return 0;
+}
+
+static void finish(int sig)
+{
+    endwin();
+    /* do your non-curses wrapup here */
+
+    printf("Bye!\n");
+
+    exit(0);
 }

@@ -188,8 +188,8 @@ int game_session(SOCKET sock)
     {
         char c = getchar();
 
-        write_server(sock, "Helloooooo");
-
+        //write_server(sock, "Helloooooo");
+        printf("Blocking?\n");
         if (c == 0x1B) 
         {
             // 0x1B ("ESC") indicates the start of an escape sequence

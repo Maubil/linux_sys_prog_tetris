@@ -12,7 +12,7 @@ TEST_OBJECTS = $(TEST_SOURCES:.c=.o)
 
 CC ?= gcc
 CC_FLAGS ?= -std=c99 -Wall -Wextra -pedantic -D_POSIX_C_SOURCE=200809L
-LD_FLAGS ?= -lm -lncurses
+LD_FLAGS ?= -lm -lncurses -lpthread
 
 all: $(CLIENT_EXEC) $(SERVER_EXEC) $(TEST_EXEC)
 

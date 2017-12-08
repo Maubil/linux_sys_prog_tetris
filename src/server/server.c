@@ -12,16 +12,12 @@
 #include <pthread.h>
 #include "../game.h"
 
-#define BUF_SIZE (255)
 #define INVALID_CLIENT_ID (-1)
-#define DELAY_MS (10)
-
-typedef int SOCKET;
+#define DELAY_MS (200)
 
 static void print_usage(const char *prog_name);
-static int read_server(SOCKET sock, char *buffer);
-static void send_data(SOCKET sock, const char *buffer);
-static int child_process(SOCKET sock);
+static void send_data(int sock, struct game_state *gs);
+static int child_process(int sock);
 static void finish(int sig);
 static int get_client_id(void);
 
@@ -67,8 +63,8 @@ int main(int argc, char *argv[])
     {
         perror("socket");
     }
-    int len=sizeof(myaddr);
-    if(bind(sockid,( struct sockaddr*)&myaddr,len)==-1)
+    socklen_t my_addr_len=sizeof(myaddr);
+    if(bind(sockid,( struct sockaddr*)&myaddr, my_addr_len)==-1)
     {
         perror("bind");
     }
@@ -80,7 +76,8 @@ int main(int argc, char *argv[])
     for(;;)
     {
         printf("Accepting connections!\n");
-        int new = accept(sockid, (struct sockaddr *)&clientaddr, &len);
+        socklen_t client_addr_len=sizeof(clientaddr);
+        int new = accept(sockid, (struct sockaddr *)&clientaddr, &client_addr_len);
 
         int pid = fork();
         if (pid < 0)
@@ -120,21 +117,6 @@ static void print_usage(const char *prog_name)
                     prog_name);
 }
 
-static int read_server(SOCKET sock, char *buffer)
-{
-   int n = 0;
-
-   if((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
-   {
-      perror("recv()");
-      exit(errno);
-   }
-
-   buffer[n] = 0;
-
-   return n;
-}
-
 static int get_client_id(void)
 {
     static bool client_in_use[CLIENTS_MAX] = {0};
@@ -147,6 +129,7 @@ static int get_client_id(void)
         if(!client_in_use[i])
         {
             next_client_id = i;
+            client_in_use[i] = 1;
             break;
         }
     }
@@ -154,41 +137,57 @@ static int get_client_id(void)
 
     return next_client_id;
 }
-#if 0
-static void send_data(SOCKET sock, struct game_state *gs)
+
+static int send_data(int sock, struct game_state *gs)
 {
-    void *data = calloc(1, sizeof(struct game_state) + FIELD_SIZE);
+    unsigned char data[FIELD_SIZE + 16] = {0};
+    char *ptr = &gs->field[0];
+    int rc = 0;
 
-struct game_state {
-    enum tet_phase phase; /* The current phase/state of the game */
-    unsigned int points;  /* The current game points a player got */
-    unsigned int level;   /* The current level of the game */
-    unsigned int togo;    /* The number of lines to clear till next level */
-    /* A point to the two-dimensional array representing the play field */
-    char (*field)[FIELD_HEIGHT][FIELD_WIDTH];
-};
+    data[0] = gs->phase & 0x000000ff;
+    data[1] = gs->phase & 0x0000ff00;
+    data[2] = gs->phase & 0x00ff0000;
+    data[3] = gs->phase & 0xff000000;
 
-    data[0] = htonl(gs->phase);
-    data[0] = htonl(gs->phase);
+    data[4] = gs->points & 0x000000ff;
+    data[5] = gs->points & 0x0000ff00;
+    data[6] = gs->points & 0x00ff0000;
+    data[7] = gs->points & 0xff000000;
 
-    if(send(sock, buffer, strlen(buffer), 0) < 0)
+    data[8] = gs->level & 0x000000ff;
+    data[9] = gs->level & 0x0000ff00;
+    data[10] = gs->level & 0x00ff0000;
+    data[11] = gs->level & 0xff000000;
+
+    data[12] = gs->togo & 0x000000ff;
+    data[13] = gs->togo & 0x0000ff00;
+    data[14] = gs->togo & 0x00ff0000;
+    data[15] = gs->togo & 0xff000000;
+
+    for(int i = 0; i < FIELD_SIZE; i++)
     {
-        free(data);
-        perror("send()");
-        exit(errno);
+        data[i + 16] = *ptr;
+        ptr++;
     }
-    free(data);
+ 
+    if(send(sock, data, FIELD_SIZE + 16, 0) < 0)
+    {
+        perror("send()");
+        rc = 1;
+    }
+    return rc;
 }
-#endif
-static int child_process(SOCKET sock)
+
+static int child_process(int sock)
 {
-    enum tet_input recvdata = TET_VOID;
+    enum tet_input user_input = TET_VOID;
+    char recv_data = 0;
 
     int client_id = get_client_id();
     if (client_id == INVALID_CLIENT_ID)
     {
         // ERROR
-        finish(0);
+        finish(1);
     }
 
     printf("Child just forked! Starting client %d\n", client_id);
@@ -199,11 +198,19 @@ static int child_process(SOCKET sock)
     {
         struct game_state *gs = NULL;
 
-        //recv(sock, &recvdata, sizeof(struct tet_input), 0);
-
         /* Move current block one column left or right */
-        gs = handle_input(client_id, recvdata);
-        nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL);
+        gs = handle_input(client_id, recv_data);
+        if(gs == NULL)
+        {
+            // error
+            break;
+        }
+        if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
+        {
+            // error
+            perror("nanosleep()");
+            break;
+        }
 
         /* Do up to 200% of substeps required for one full time step.
          * Thus for every step right/left above, do up to two steps down. */
@@ -213,17 +220,28 @@ static int child_process(SOCKET sock)
         }
         if (gs->phase == TET_LOSE || gs->phase == TET_WIN) 
         {
-            fprintf(stderr,
-                    "Player %s with %u points in level %u.\n",
-                    gs->phase == TET_WIN ? "wins" : "loses",
-                    gs->points,
-                    gs->level);
-                exit(1);
+            fprintf(stderr, "Player %s with %u points in level %u.\n",
+                    gs->phase == TET_WIN ? "wins" : "loses", gs->points, gs->level);
+            break;
+        }
+        if(send_data(sock, gs) != 0)
+        {
+            // error
+            break;
+        }
+        if(recv(sock, &recv_data, 1, 0) < 0)
+        {
+            // error
+            perror("recv()");
+            break;
         }
 
-        /* serialize data */
-
-        nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL);
+        if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
+        {
+            // error
+            perror("nanosleep()");
+            break;
+        }
     }
     
     return 0;
@@ -231,10 +249,7 @@ static int child_process(SOCKET sock)
 
 static void finish(int sig)
 {
-    endwin();
-    /* do your non-curses wrapup here */
-
     printf("Bye!\n");
 
-    exit(0);
+    exit(sig);
 }

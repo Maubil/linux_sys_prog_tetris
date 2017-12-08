@@ -15,6 +15,7 @@ static void print_usage(const char *prog_name);
 static int init_connection(const char *server_ip, const char *server_port);
 static int game_session(int sock);
 static void finish(int sig);
+static void recv_data(int sock, struct game_state *gs);
 WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH]);
 
 int main(int argc, char *argv[])
@@ -140,13 +141,14 @@ static void print_usage(const char *prog_name)
 static int game_session(int sock)
 {
     char field[FIELD_HEIGHT][FIELD_WIDTH];
-    enum tet_input user_input = TET_VOID;
+    struct game_state gs = {0};
     WINDOW *my_win = NULL;
     int ch = 0;
     int row = 0;
     int col = 0;
     
     memset(field, ' ', FIELD_SIZE);
+    gs.field = field;
 
     initscr();
     cbreak();
@@ -159,10 +161,16 @@ static int game_session(int sock)
     printw("row: %d\tcol: %d!", row, col);
 
 	my_win = field_draw(&field[0]);
+    char user_input = TET_VOID;
 
     while ((ch = getch()) != 'q')
     {
-    //TET_CCLOCK,       /* Rotates the current block counterclockwise */
+        mvprintw(row - 1, 0, "Worky worky ?");
+        refresh();
+
+        recv_data(sock, &gs);
+
+           //TET_CCLOCK,       /* Rotates the current block counterclockwise */
     //TET_CHEAT,        /* Changes the current block to another shape */
     //TET_PAUSE,        /* Pauses/unpauses the current game */
     //TET_FASTER,       /* Increases the pace of the game a bit */
@@ -171,58 +179,64 @@ static int game_session(int sock)
         {
             case KEY_UP:
                 user_input = TET_CLOCK;
-                strncpy(field[0], "1234567890", FIELD_WIDTH);
-                printw("up!");
                 break;
             case KEY_DOWN:
                 user_input = TET_DOWN;
-                strncpy(field[1], "agagaagougou", FIELD_WIDTH);
-                printw("down!");
                 break;
             case KEY_LEFT:
                 user_input = TET_LEFT;
-                strncpy(field[2], "randomtextblaa", FIELD_WIDTH);
-                printw("left!");
                 break;
             case KEY_RIGHT:
                 user_input = TET_RIGHT;
-                strncpy(field[3], "lkndffkndfknbdf", FIELD_WIDTH);
-                printw("right!");
                 break;
             case 'r':
                 user_input = TET_RESTART;
-                printw("r was pressed\n");
                 break;
             case ' ':
                 user_input = TET_DOWN_INSTANT;
-                printw("space pressed!\n");
                 break;
             default:
                 user_input = TET_VOID;
-                //printw("Nothing entered this time...\n");
                 break;
         }
-        mvprintw(row - 1, 0, "Worky worky ?");
-        refresh();
-/*
-        if(send(sock, buffer, strlen(buffer), 0) < 0)
+
+        if(send(sock, &user_input, 1, 0) < 0)
         {
+            finish(2);
             perror("send()");
-            finish(0);
+            exit(2);
         }
 
-        if((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
-        {
-            perror("recv()");
-            finish(0);
-        }
-*/
         delwin(my_win);
-        my_win = field_draw(&field[0]);
+        my_win = field_draw(&gs.field[0]);
 
         napms(100);
     }
     return 0;
+}
+
+static void recv_data(int sock, struct game_state *gs)
+{
+    unsigned char data[FIELD_SIZE + 16] = {0};
+    char *ptr = &gs->field[0];
+    ssize_t n = 0; // TODO check n
+
+    if((n = recv(sock, data, FIELD_SIZE + 16, 0)) < 0)
+    {
+        perror("recv()");
+        finish(3);
+    }
+
+    gs->phase = data[0] || data[1] << 8 ||  data[2] << 16 || data[3] << 24;
+    gs->points = data[4] || data[5] << 8 ||  data[6] << 16 || data[7] << 24;
+    gs->level = data[8] || data[9] << 8 ||  data[10] << 16 || data[11] << 24;
+    gs->togo = data[12] || data[13] << 8 ||  data[14] << 16 || data[15] << 24;
+
+    for(int i = 0; i < FIELD_SIZE; i++)
+    {
+        *ptr = data[i + 16];
+        ptr++;
+    }
 }
 
 static void finish(int sig)
@@ -230,9 +244,9 @@ static void finish(int sig)
     endwin();
     /* do your non-curses wrapup here */
 
-    printf("Bye!\n");
+    printf("Bye!");
 
-    exit(0);
+    //exit(sig);
 }
 
 WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])

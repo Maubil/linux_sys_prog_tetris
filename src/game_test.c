@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "../game.h"
+#include "game.h"
 
 #define CLIENT_ID (0)
 #define DELAY_MS (10)
@@ -41,7 +41,7 @@ int main (void)
 
         /* Move current block one column left or right */
         gs = handle_input(CLIENT_ID, (rand() % 2) ? TET_LEFT : TET_RIGHT);
-        draw_field(*gs->field);
+        draw_field((const char (*)[FIELD_WIDTH])gs->field);
         nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL);
 
         unsigned int substeps = rand() % (2 * STEP_TIME_INIT/STEP_TIME_GRANULARITY);
@@ -51,7 +51,7 @@ int main (void)
         {
             gs = handle_substep(CLIENT_ID);
         }
-        draw_field(*gs->field);
+        draw_field((const char (*)[FIELD_WIDTH])gs->field);
         if (gs->phase == TET_LOSE || gs->phase == TET_WIN) 
         {
             fprintf(stderr,

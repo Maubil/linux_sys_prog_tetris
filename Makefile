@@ -1,10 +1,10 @@
 CLIENT_EXEC = client
 SERVER_EXEC = server
 TEST_EXEC = test
-COMMON = $(wildcard src/*.c)
-CLIENT_SOURCES = $(wildcard src/client/*.c)
-SERVER_SOURCES = $(wildcard src/server/*.c)
-TEST_SOURCES = $(wildcard src/test/*.c)
+COMMON = ./src/game.c
+CLIENT_SOURCES = ./src/client/client.c
+SERVER_SOURCES = ./src/server/server.c
+TEST_SOURCES = ./src/test/game_test.c
 CLIENT_OBJECTS = $(CLIENT_SOURCES:.c=.o)
 COMMON_OBJECTS = $(COMMON:.c=.o)
 SERVER_OBJECTS = $(SERVER_SOURCES:.c=.o)

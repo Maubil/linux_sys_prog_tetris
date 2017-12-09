@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <getopt.h>
 #include <netdb.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <ncurses.h>
 #include <signal.h>
@@ -11,19 +13,22 @@
 #define WIN_POS_X 10
 #define WIN_POS_Y 1
 
+
+static bool shutdown_signal = 0;
+
 static void print_usage(const char *prog_name);
 static int init_connection(const char *server_ip, const char *server_port);
 static int game_session(int sock);
 static void finish(int sig);
 static void recv_data(int sock, struct game_state *gs);
-WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH]);
+WINDOW *field_draw(char field[FIELD_HEIGHT][FIELD_WIDTH]);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
     char *server_ip = "127.0.0.1";
     char *server_port = "30001";
-    int check_port = 0;
+    int32_t check_port = 0;
     int sock = 0;
 
     (void) signal(SIGINT, finish);
@@ -61,7 +66,8 @@ int main(int argc, char *argv[])
     /* we are ready to start the game */
     sock = init_connection(server_ip, server_port);
 
-    int rc = game_session(sock);
+    uint32_t rc = game_session(sock);
+    (void)rc;
 
     close(sock);
     finish(0);
@@ -90,7 +96,7 @@ static int init_connection(const char *server_ip, const char *server_port)
 
     s = getaddrinfo(server_ip, server_port, &hints, &result);
     if (s != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+        (void)fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
         exit(EXIT_FAILURE);
     }
 
@@ -110,7 +116,7 @@ static int init_connection(const char *server_ip, const char *server_port)
         if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
         {
             /* success */
-            printf("Connected to server!\n");
+            (void)printf("Connected to server!\n");
             break;
         }
 
@@ -121,16 +127,19 @@ static int init_connection(const char *server_ip, const char *server_port)
 
     if (rp == NULL)     /* No address succeeded */
     {
-        fprintf(stderr, "Could not connect\n");
+        (void)fprintf(stderr, "Could not connect\n");
         exit(EXIT_FAILURE);
     }
 
     return sfd;
 }
 
+/*! \brief print usage to sterr
+    \param prog_name    program name string
+*/
 static void print_usage(const char *prog_name)
 {
-    fprintf(stderr, "Usage: %s [-i <server ip>] [-p <server port>] [-h]\n"
+    (void)fprintf(stderr, "Usage: %s [-i <server ip>] [-p <server port>] [-h]\n"
                     "Options:\n"
                     "  -i <server ip>\t\tIP adresse of the server.\n"
                     "  -p <server port>\t\tServer port in use.\n"
@@ -138,6 +147,10 @@ static void print_usage(const char *prog_name)
                     prog_name);
 }
 
+/*! \brief Start a game session.
+    \param sock     socket to use.
+    \return 0 on success 1 on error
+*/
 static int game_session(int sock)
 {
     char field[FIELD_HEIGHT][FIELD_WIDTH];
@@ -148,7 +161,7 @@ static int game_session(int sock)
     int col = 0;
     
     memset(field, ' ', FIELD_SIZE);
-    gs.field = field;
+    gs.field = &field;
 
     initscr();
     cbreak();
@@ -160,21 +173,16 @@ static int game_session(int sock)
     getmaxyx(stdscr, row, col);
     printw("row: %d\tcol: %d!", row, col);
 
-	my_win = field_draw(&field[0]);
+	my_win = field_draw(&gs.field[0][0]);
     char user_input = TET_VOID;
 
     while ((ch = getch()) != 'q')
     {
-        mvprintw(row - 1, 0, "Worky worky ?");
+        mvprintw(row - 1, 0, "Game is on!");
         refresh();
 
         recv_data(sock, &gs);
 
-           //TET_CCLOCK,       /* Rotates the current block counterclockwise */
-    //TET_CHEAT,        /* Changes the current block to another shape */
-    //TET_PAUSE,        /* Pauses/unpauses the current game */
-    //TET_FASTER,       /* Increases the pace of the game a bit */
-    //TET_SLOWER,*/
         switch(ch)
         {
             case KEY_UP:
@@ -195,6 +203,13 @@ static int game_session(int sock)
             case ' ':
                 user_input = TET_DOWN_INSTANT;
                 break;
+            case 'a':
+                user_input = TET_CCLOCK;
+                user_input = TET_CHEAT;
+                user_input = TET_PAUSE;
+                user_input = TET_FASTER;
+                user_input = TET_SLOWER;
+                break;
             default:
                 user_input = TET_VOID;
                 break;
@@ -208,17 +223,21 @@ static int game_session(int sock)
         }
 
         delwin(my_win);
-        my_win = field_draw(&gs.field[0]);
+        my_win = field_draw(&gs.field[0][0]);
 
         napms(100);
     }
     return 0;
 }
 
+/*! \brief receive data and deserialize it.
+    \param sock socket to receive from.
+    \param gs   game status pointer.
+*/
 static void recv_data(int sock, struct game_state *gs)
 {
     unsigned char data[FIELD_SIZE + 16] = {0};
-    char *ptr = &gs->field[0];
+    char *ptr = &(*gs->field)[0][0];
     ssize_t n = 0; // TODO check n
 
     if((n = recv(sock, data, FIELD_SIZE + 16, 0)) < 0)
@@ -232,30 +251,37 @@ static void recv_data(int sock, struct game_state *gs)
     gs->level = data[8] || data[9] << 8 ||  data[10] << 16 || data[11] << 24;
     gs->togo = data[12] || data[13] << 8 ||  data[14] << 16 || data[15] << 24;
 
-    for(int i = 0; i < FIELD_SIZE; i++)
+    for(size_t i = 0; i < FIELD_SIZE; i++)
     {
         *ptr = data[i + 16];
         ptr++;
     }
 }
 
+/*! \brief Finish and cleanup everything.
+    \param sig    signal which triggered this function.
+*/
 static void finish(int sig)
 {
     endwin();
+    (void)sig;
     /* do your non-curses wrapup here */
 
-    printf("Bye!");
+    shutdown_signal = 1;
 
-    //exit(sig);
 }
 
-WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
+/*! \brief Draw a window with the tetris field.
+    \param  field    actual field status
+    \return WINDOW pointer
+*/
+WINDOW *field_draw(char field[FIELD_HEIGHT][FIELD_WIDTH])
 {
     WINDOW *local_win = newwin(FIELD_HEIGHT + 2, FIELD_WIDTH + 2, WIN_POS_X, WIN_POS_Y);
 	box(local_win, 0 , 0);
-    for(int i = 0; i < FIELD_HEIGHT; i++)
+    for(size_t i = 0; i < FIELD_HEIGHT; i++)
     {
-        for(int j = 0; j < FIELD_WIDTH; j++)
+        for(size_t j = 0; j < FIELD_WIDTH; j++)
         {
             mvwaddch(local_win, i + 1, j + 1, field[i][j]);
         }

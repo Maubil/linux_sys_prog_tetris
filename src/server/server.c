@@ -3,11 +3,11 @@
 #include <getopt.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <string.h>
-#include <errno.h>
 #include <signal.h>
 #include <pthread.h>
 #include "../game.h"
@@ -15,16 +15,21 @@
 #define INVALID_CLIENT_ID (-1)
 #define DELAY_MS (200)
 
+static int clients_in_use = 0;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static void print_usage(const char *prog_name);
-static void send_data(int sock, struct game_state *gs);
-static int child_process(int sock);
+static int send_data(int sock, struct game_state *gs);
+static int child_process(int sock, int client_id);
 static void finish(int sig);
 static int get_client_id(void);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
+    int sockid = 0;
     int check_port = 30001;
+    struct sockaddr_in myaddr, clientaddr;
 
     (void) signal(SIGINT, finish);
 
@@ -53,29 +58,32 @@ int main(int argc, char *argv[])
         }
     }
 
-    struct sockaddr_in myaddr ,clientaddr;
-    int sockid = socket(AF_INET, SOCK_STREAM, 0);
-    memset(&myaddr, '0', sizeof(myaddr));
-    myaddr.sin_family=AF_INET;
-    myaddr.sin_port=htons(check_port);
-    myaddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+    sockid = socket(AF_INET, SOCK_STREAM, 0);
     if(sockid==-1)
     {
         perror("socket");
+        return 1;
     }
+    
+    memset(&myaddr, 0, sizeof(myaddr));
+    myaddr.sin_family=AF_INET;
+    myaddr.sin_port=htons(check_port);
+    myaddr.sin_addr.s_addr=inet_addr("127.0.0.1");
     socklen_t my_addr_len=sizeof(myaddr);
-    if(bind(sockid,( struct sockaddr*)&myaddr, my_addr_len)==-1)
+    if(bind(sockid, (struct sockaddr*)&myaddr, my_addr_len) == -1)
     {
         perror("bind");
+        return 1;
     }
-    if(listen(sockid,10)==-1)
+    if(listen(sockid, 10) == -1)
     {
         perror("listen");
+        return 1;
     }
 
-    for(;;)
+    while(1)
     {
-        printf("Accepting connections!\n");
+        (void)printf("Accepting connections!\n");
         socklen_t client_addr_len=sizeof(clientaddr);
         int new = accept(sockid, (struct sockaddr *)&clientaddr, &client_addr_len);
 
@@ -83,114 +91,133 @@ int main(int argc, char *argv[])
         if (pid < 0)
         {
             close(new);
-            printf("Fork failed closing socket!\n");
+            (void)printf("Fork failed closing socket!\n");
             continue;
         }
         else if(pid == 0)
         {
             /* blocking call */
-            int rc = child_process(new);
-            (void)rc;
-            printf("Child terminated!\n");
+            printf("New child started!\n");
+            int client_id = get_client_id();
+            if (client_id != INVALID_CLIENT_ID)
+            {
+                child_process(new, client_id);
+            }
+            else
+            {
+                (void)printf("no available session");
+            }
+            (void)printf("Child finished!\n");
             close(new);
             break;
         }
         else
         {
             close(new);
-            printf("Parent process!\n");
+            (void)printf("Parent process!\n");
             continue;
         }
     }
 
-    printf("Exiting for loop now!\n");
-    close(sockid);
+    if(pthread_mutex_lock(&mutex) != 0)
+    {
+        exit(1);
+    }
+    if(clients_in_use == 0)
+    {
+        (void)printf("No more childrens running!\n");
+        close(sockid);
+    }
+    if(pthread_mutex_unlock(&mutex) != 0)
+    {
+        exit(1);
+    }
     return 0;
 }
 
+/*! \brief print usage to sterr
+    \param prog_name    program name string
+*/
 static void print_usage(const char *prog_name)
 {
-    fprintf(stderr, "Usage: %s [-p <port>] [-h]\n"
+    (void)fprintf(stderr, "Usage: %s [-p <port>] [-h]\n"
                     "Options:\n"
                     "  -p <port>\t\tPort to use.\n"
                     "  -h\t\t\tPrint help and exit.\n",
                     prog_name);
 }
 
+/*! \brief Get an available client session.
+    \return     client id or error
+*/
 static int get_client_id(void)
 {
-    static bool client_in_use[CLIENTS_MAX] = {0};
-    static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
     int next_client_id = INVALID_CLIENT_ID;
 
-    pthread_mutex_lock(&mutex);
-    for(int i = 0; i < CLIENTS_MAX; i++)
+    if(pthread_mutex_lock(&mutex) != 0)
     {
-        if(!client_in_use[i])
-        {
-            next_client_id = i;
-            client_in_use[i] = 1;
-            break;
-        }
+        exit(1);
     }
-    pthread_mutex_unlock(&mutex);
+    if(clients_in_use < CLIENTS_MAX)
+    {
+        next_client_id = clients_in_use++;
+    }
+    if(pthread_mutex_unlock(&mutex) != 0)
+    {
+        exit(1);
+    }
 
     return next_client_id;
 }
 
+/*! \brief serialize and send game data to client.
+    \param sock     socket to connect to.
+    \param gs       game status.
+*/
 static int send_data(int sock, struct game_state *gs)
 {
-    unsigned char data[FIELD_SIZE + 16] = {0};
-    char *ptr = &gs->field[0];
-    int rc = 0;
+    unsigned char data[FIELD_SIZE + 12] = {0};
+    char *ptr = &(*gs->field)[0][0];
 
-    data[0] = gs->phase & 0x000000ff;
-    data[1] = gs->phase & 0x0000ff00;
-    data[2] = gs->phase & 0x00ff0000;
-    data[3] = gs->phase & 0xff000000;
+    data[0] = (unsigned char)gs->phase & 0xff;
 
-    data[4] = gs->points & 0x000000ff;
-    data[5] = gs->points & 0x0000ff00;
-    data[6] = gs->points & 0x00ff0000;
-    data[7] = gs->points & 0xff000000;
+    data[1] = gs->points & 0x000000ff;
+    data[2] = gs->points & 0x0000ff00;
+    data[3] = gs->points & 0x00ff0000;
+    data[4] = gs->points & 0xff000000;
 
-    data[8] = gs->level & 0x000000ff;
-    data[9] = gs->level & 0x0000ff00;
-    data[10] = gs->level & 0x00ff0000;
-    data[11] = gs->level & 0xff000000;
+    data[5] = gs->level & 0x000000ff;
+    data[6] = gs->level & 0x0000ff00;
+    data[7] = gs->level & 0x00ff0000;
+    data[8] = gs->level & 0xff000000;
 
-    data[12] = gs->togo & 0x000000ff;
-    data[13] = gs->togo & 0x0000ff00;
-    data[14] = gs->togo & 0x00ff0000;
-    data[15] = gs->togo & 0xff000000;
+    data[9] = gs->togo & 0x000000ff;
+    data[10] = gs->togo & 0x0000ff00;
+    data[11] = gs->togo & 0x00ff0000;
+    data[12] = gs->togo & 0xff000000;
 
-    for(int i = 0; i < FIELD_SIZE; i++)
+    for(size_t i = 0; i < FIELD_SIZE; i++)
     {
-        data[i + 16] = *ptr;
+        data[i + 13] = *ptr;
         ptr++;
     }
  
     if(send(sock, data, FIELD_SIZE + 16, 0) < 0)
     {
         perror("send()");
-        rc = 1;
+        return 1;
     }
-    return rc;
+    return 0;
 }
 
-static int child_process(int sock)
+/*! \brief This process is started by the child and handles the game session for each client.
+    \param sock         socket to connect to the client.
+    \param client_id    client id, or game session in use.
+    \return 0 on success, 1 on error
+*/
+static int child_process(int sock, int client_id)
 {
-    enum tet_input user_input = TET_VOID;
     char recv_data = 0;
-
-    int client_id = get_client_id();
-    if (client_id == INVALID_CLIENT_ID)
-    {
-        // ERROR
-        finish(1);
-    }
-
-    printf("Child just forked! Starting client %d\n", client_id);
 
     init_game(client_id);
 
@@ -202,14 +229,12 @@ static int child_process(int sock)
         gs = handle_input(client_id, recv_data);
         if(gs == NULL)
         {
-            // error
-            break;
+            return 1;
         }
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
-            // error
             perror("nanosleep()");
-            break;
+            return 1;
         }
 
         /* Do up to 200% of substeps required for one full time step.
@@ -222,34 +247,34 @@ static int child_process(int sock)
         {
             fprintf(stderr, "Player %s with %u points in level %u.\n",
                     gs->phase == TET_WIN ? "wins" : "loses", gs->points, gs->level);
-            break;
+            return 0;
         }
         if(send_data(sock, gs) != 0)
         {
-            // error
-            break;
+            return 1;
         }
         if(recv(sock, &recv_data, 1, 0) < 0)
         {
-            // error
             perror("recv()");
-            break;
+            return 1;
         }
 
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
-            // error
             perror("nanosleep()");
-            break;
+            return 1;
         }
     }
     
     return 0;
 }
 
+/*! \brief Finish and cleanup everything.
+    \param sig    signal which triggered this function.
+*/
 static void finish(int sig)
 {
     printf("Bye!\n");
-
-    exit(sig);
+    // close socket and kill all running childrenss
+    exit(sig == SIGINT ? 0 : sig);
 }

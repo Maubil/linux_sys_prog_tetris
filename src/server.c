@@ -11,6 +11,7 @@
 #include <string.h>
 #include <signal.h>
 #include <pthread.h>
+#include <errno.h>
 #include "game.h"
 #include "queues.h"
 #include "common.h"
@@ -21,11 +22,11 @@
 
 struct client_data_t {
     int socket;
+    uint32_t id;
     pthread_t thread;
 };
 
 static uint32_t high_score[NB_HIGH_SCORES_SHOWN] = {0};
-static struct client_data_t worker_thread_data[CLIENTS_MAX];
 
 static void print_usage(const char *prog_name);
 static int send_data(int sock, struct game_state *gs);
@@ -41,6 +42,7 @@ int main(int argc, char *argv[])
     int sockid = 0;
     int check_port = 30001;
     pthread_t thread1;
+    struct client_data_t worker_thread_data[CLIENTS_MAX];
     struct sockaddr_in myaddr, clientaddr;
 
     (void) signal(SIGINT, finish);
@@ -111,19 +113,19 @@ int main(int argc, char *argv[])
         if(client_id != INVALID_CLIENT_ID)
         {
             (void)printf("Accepting connections on client id %d!\n", client_id);
+            worker_thread_data[client_id].id = client_id;
             worker_thread_data[client_id].socket = accept(sockid, (struct sockaddr *)&clientaddr, &client_addr_len);
 
             /* start a new thread for each new client until we reach CLIENTS_MAX */
-            if(pthread_create(&worker_thread_data[client_id].thread, NULL, child_thread, &client_id) != 0)
+            if(pthread_create(&worker_thread_data[client_id].thread, NULL, child_thread, &worker_thread_data[client_id]) != 0)
             {
                 close(worker_thread_data[client_id].socket);
                 perror("ptherad_create()");
                 return 1;
             }
-            printf("Thread started!\n");
         }
         else{
-            printf("invalid client\n");
+            (void)printf("no more clients available...\n");
         }
     }
 
@@ -132,18 +134,17 @@ int main(int argc, char *argv[])
 
 void *child_thread(void *ptr)
 {
-    int data = *(int*)ptr;
+    struct client_data_t *data = (struct client_data_t*)ptr;
 
-    int rc = child_process(worker_thread_data[data].socket, data);
+    int rc = child_process(data->socket, data->id);
+    close(data->socket);
+    release_client_id(data->id);
+
     if(rc != 0 && rc != 2)
     {
-        printf("child process died rc is %d!\n", rc);
-        close(worker_thread_data[data].socket);
-        exit(45);
+        exit(1);
     }
-    printf("I was killed properly!\n");
-    release_client_id(data);
-    close(worker_thread_data[data].socket);
+    
     return NULL;
 }
 
@@ -156,6 +157,7 @@ void *high_score_writer_task(void *ptr)
 
     (void)ptr;
 
+    /* read high score file, sort data and save them to memory */
     FILE *fp = fopen(HIGH_SCORE_FILE, "r");
     if(fp == NULL)
     {
@@ -163,7 +165,7 @@ void *high_score_writer_task(void *ptr)
         exit(1);
     }
 
-    while ((getline(&line, &len, fp)) != -1 && i < NB_HIGH_SCORES_SHOWN) 
+    while (getline(&line, &len, fp) != -1 && i < NB_HIGH_SCORES_SHOWN) 
     {
         high_score[i++] = atoi(line);
     }
@@ -172,28 +174,18 @@ void *high_score_writer_task(void *ptr)
 
     bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
 
-    for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
-    {
-        printf("high score is %u\n", high_score[i]);
-    }
-
     while(1)
     {
         if(consume(&data_in) != 0)
         {
-            printf("ERROR");
             perror("consume error");
             break;
         }
 
-        printf("GOT A MESSAGE, value is %d!\n", data_in);
-
         /* if the new value is at least bigger than the lowest high score entry */
         if(data_in > high_score[0])
         {
-            printf("Adding to high score!\n");
-
-            /* add value to the end and let bubble sort work */
+            /* add value and let bubble sort work */
             high_score[0] = data_in;
             bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
         }
@@ -224,7 +216,7 @@ static int send_data(int sock, struct game_state *gs)
 
     serialize_data(data, gs);
  
-    if(send(sock, data, FIELD_SIZE + 16, 0) < 0)
+    if(send(sock, data, FIELD_SIZE + 16, MSG_NOSIGNAL) < 0)
     {
         perror("send()");
         return 1;
@@ -235,14 +227,17 @@ static int send_data(int sock, struct game_state *gs)
 static int send_high_scores(int sock)
 {
     char recv_data = 0;
-    uint32_t scores[NB_HIGH_SCORES_SHOWN] = {0};
+    char scores[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
     for(size_t i = NB_HIGH_SCORES_SHOWN - 1; i != 0; i--)
     {
-        scores[i] = htonl(high_score[i]);
+        scores[(i + 1) * 4 - 1] = (char)high_score[(i + 1) - NB_HIGH_SCORES_SHOWN];
+        scores[(i + 1) * 4 - 2] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 8);
+        scores[(i + 1) * 4 - 3] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 16);
+        scores[(i + 1) * 4 - 4] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 24);
     }
 
-    if(send(sock, scores, sizeof(scores) / sizeof(scores[0]), 0) < 0)
+    if(send(sock, scores, NB_HIGH_SCORES_SHOWN * 4, MSG_NOSIGNAL) < 0)
     {
         perror("send()");
         return 1;
@@ -266,10 +261,15 @@ static int send_high_scores(int sock)
 static int child_process(int sock, uint32_t client_id)
 {
     char recv_data = 0;
+    int rc = 1;
+    struct game_state *gs = NULL;
     uint32_t last_handling = time_in_ms();
 
     /* do not die on broken pipes, but handle and return */
-    (void)signal(SIGPIPE, SIG_IGN);
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        perror(0);
+        exit(1);
+    }
 
     if(send_high_scores(sock) != 0)
     {
@@ -281,17 +281,15 @@ static int child_process(int sock, uint32_t client_id)
 
     while(1)
     {
-        struct game_state *gs = NULL;
-        /* Move current block one column left or right */
         gs = handle_input(client_id, recv_data);
         if(gs == NULL)
         {
-            return 1;
+            rc = 1; break;
         }
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
             perror("nanosleep()");
-            return 1;
+            rc = 1; break;
         }
         if((time_in_ms() - last_handling) > STEP_TIME_GRANULARITY)
         {
@@ -300,37 +298,36 @@ static int child_process(int sock, uint32_t client_id)
         }
         if(send_data(sock, gs) != 0)
         {
-            return 1;
+            rc = 2; break;
         }
         if (gs->phase == TET_LOSE || gs->phase == TET_WIN) 
         {
-            puts("HERE I AM");
-            printf("Player %s with %u points in level %u.\n",
+            (void)printf("Player %s with %u points in level %u.\n",
                     gs->phase == TET_WIN ? "wins" : "loses", gs->points, gs->level);
-            if(produce(gs->points) != 0)
-            {
-                perror("produce error");
-                return 1;
-            }
-            return 0;
+            rc = 0; break;
         }
         if(recv(sock, &recv_data, 1, 0) < 0)
         {
             perror("recv()");
-            return 2;
+            rc = 2; break;
         }
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
             perror("nanosleep()");
-            return 1;
+            rc = 1; break;
         }
-        if(recv_data == 'q')
-        { 
-            break;
+        if(recv_data >= TET_MAX)
+        {
+            (void)printf("User sent unknown character!\n");
+            rc = 2; break;
         }
     }
-    
-    return 0;
+    if(produce(gs->points) != 0)
+    {
+        perror("produce error");
+        rc = 1;
+    }
+    return rc;
 }
 
 /*! \brief Finish and cleanup everything.
@@ -338,8 +335,7 @@ static int child_process(int sock, uint32_t client_id)
 */
 static void finish(int sig)
 {
-    printf("Bye!\n");
-
+    (void)sig;
     FILE *fp = fopen(HIGH_SCORE_FILE, "w+");
     if(fp == NULL)
     {
@@ -355,6 +351,8 @@ static void finish(int sig)
     fclose(fp);
 
     (void)cleanup_queue();
+
+    (void)printf("Data saved. Exiting!!\n");
 
     exit(0);
 }

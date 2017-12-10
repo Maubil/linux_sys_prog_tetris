@@ -129,20 +129,20 @@ void serialize_data(char data[FIELD_SIZE + 16], struct game_state *gs)
     data[2] = 0;
     data[3] = 0;
 
-    data[4] = gs->points & 0x000000ff;
-    data[5] = gs->points & 0x0000ff00;
-    data[6] = gs->points & 0x00ff0000;
-    data[7] = gs->points & 0xff000000;
+    data[4] = (char)gs->points;
+    data[5] = (char)(gs->points >> 8);
+    data[6] = (char)(gs->points >> 16);
+    data[7] = (char)(gs->points >> 24);
 
-    data[8] = gs->level & 0x000000ff;
-    data[9] = gs->level & 0x0000ff00;
-    data[10] = gs->level & 0x00ff0000;
-    data[11] = gs->level & 0xff000000;
+    data[8] = (char)gs->level;
+    data[9] = (char)(gs->level >> 8);
+    data[10] = (char)(gs->level >> 16);
+    data[11] = (char)(gs->level >> 24);
 
-    data[12] = gs->togo & 0x000000ff;
-    data[13] = gs->togo & 0x0000ff00;
-    data[14] = gs->togo & 0x00ff0000;
-    data[15] = gs->togo & 0xff000000;
+    data[12] = (char)gs->togo;
+    data[13] = (char)(gs->togo >> 8);
+    data[14] = (char)(gs->togo >> 16);
+    data[15] = (char)(gs->togo >> 24);
 
     for(size_t i = 0; i <= FIELD_SIZE; i++)
     {

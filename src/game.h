@@ -46,6 +46,7 @@ enum tet_input {
     TET_RESTART,      /* Restarts the current game */
     TET_FASTER,       /* Increases the pace of the game a bit */
     TET_SLOWER,       /* Decreases the pace of the game a bit */
+    TET_MAX           /* place holder to get max size */
 };
 
 enum tet_phase {

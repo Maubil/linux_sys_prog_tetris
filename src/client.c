@@ -10,7 +10,7 @@
 #include "game.h"
 
 #define BUF_SIZE 255
-#define WIN_POS_X 10
+#define WIN_POS_X 3
 #define WIN_POS_Y 1
 #define NB_HIGH_SCORES_SHOWN (10)
 
@@ -71,10 +71,9 @@ int main(int argc, char *argv[])
 
 static void show_high_scores(int sock)
 {
-    uint32_t high_score[NB_HIGH_SCORES_SHOWN] = {0};
-    ssize_t n = 0;
+    char high_score[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
-    if((n = recv(sock, high_score, NB_HIGH_SCORES_SHOWN * sizeof(uint32_t), 0)) < 0)
+    if(recv(sock, high_score, NB_HIGH_SCORES_SHOWN * 4, 0) < 0)
     {
         perror("recv()");
     }
@@ -83,7 +82,7 @@ static void show_high_scores(int sock)
 
     for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
-        mvprintw(i + 2, 0, "%d. with a score of %010u", i + 1, ntohl(high_score[i]));
+        mvprintw(i + 2, 0, "%d. with a score of %u", i + 1, high_score[i * 4] | high_score[i * 4 + 1] | high_score[i * 4 + 2] | high_score[i * 4 + 3]);
     }
     mvprintw(NB_HIGH_SCORES_SHOWN + 3, 0, "Press any key to start the game!");
 
@@ -292,15 +291,15 @@ static void recv_data(int sock, struct game_state *gs)
     char *ptr = &(*gs->field)[0][0];
     ssize_t n = 0;
 
-    if((n = recv(sock, data, FIELD_SIZE + 16, 0)) < 0)
+    if((n = recv(sock, data, sizeof(data) / sizeof(data[0]), 0)) < 0)
     {
         perror("recv()");
     }
 
     gs->phase  = (enum tet_phase)data[0];
-    gs->points = data[4] || data[5] << 8 || data[6] << 16 || data[7] << 24;
-    gs->level  = data[8] || data[9] << 8 ||  data[10] << 16 || data[11] << 24;
-    gs->togo   = data[12] || data[13] << 8 || data[14] << 16 || data[15] << 24;
+    gs->points = data[4] | data[5] << 8 | data[6] << 16 | data[7] << 24;
+    gs->level  = data[8] | data[9] << 8 | data[10] << 16 | data[11] << 24;
+    gs->togo   = data[12] | data[13] << 8 | data[14] << 16 | data[15] << 24;
 
     for(size_t i = 0; i <= FIELD_SIZE; i++)
     {

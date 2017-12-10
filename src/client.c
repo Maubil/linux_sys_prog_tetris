@@ -73,7 +73,7 @@ static void show_high_scores(int sock)
 {
     char high_score[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
-    if(recv(sock, high_score, NB_HIGH_SCORES_SHOWN * 4, 0) < 0)
+    if(recv(sock, high_score, sizeof(high_score) / sizeof(high_score[0]), 0) < 0)
     {
         perror("recv()");
     }
@@ -82,7 +82,7 @@ static void show_high_scores(int sock)
 
     for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
-        mvprintw(i + 2, 0, "%d. with a score of %u", i + 1, high_score[i * 4] | high_score[i * 4 + 1] | high_score[i * 4 + 2] | high_score[i * 4 + 3]);
+        mvprintw(i + 2, 0, "%02d. with a score of %u", i + 1, high_score[i * 4] | high_score[i * 4 + 1] | high_score[i * 4 + 2] | high_score[i * 4 + 3]);
     }
     mvprintw(NB_HIGH_SCORES_SHOWN + 3, 0, "Press any key to start the game!");
 

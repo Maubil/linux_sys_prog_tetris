@@ -229,15 +229,15 @@ static int send_high_scores(int sock)
     char recv_data = 0;
     char scores[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
-    for(size_t i = NB_HIGH_SCORES_SHOWN - 1; i != 0; i--)
+    for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
-        scores[(i + 1) * 4 - 1] = (char)high_score[(i + 1) - NB_HIGH_SCORES_SHOWN];
-        scores[(i + 1) * 4 - 2] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 8);
-        scores[(i + 1) * 4 - 3] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 16);
-        scores[(i + 1) * 4 - 4] = (char)(high_score[(i + 1) - NB_HIGH_SCORES_SHOWN] >> 24);
+        scores[i * 4] = (char)high_score[i];
+        scores[(i * 4) + 1] = (char)(high_score[i] >> 8);
+        scores[(i * 4) + 2] = (char)(high_score[i] >> 16);
+        scores[(i * 4) + 3] = (char)(high_score[i] >> 24);
     }
 
-    if(send(sock, scores, NB_HIGH_SCORES_SHOWN * 4, MSG_NOSIGNAL) < 0)
+    if(send(sock, scores, sizeof(scores) / sizeof(scores[0]), MSG_NOSIGNAL) < 0)
     {
         perror("send()");
         return 1;

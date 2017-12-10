@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
     memset(&myaddr, 0, sizeof(myaddr));
     myaddr.sin_family=AF_INET;
     myaddr.sin_port=htons(check_port);
-    myaddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+    myaddr.sin_addr.s_addr=htonl(INADDR_ANY);
     socklen_t my_addr_len=sizeof(myaddr);
     if(bind(sockid, (struct sockaddr*)&myaddr, my_addr_len) == -1)
     {

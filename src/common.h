@@ -11,7 +11,7 @@
     \param  n       size of the array.
     \remark from: http://www.programmingsimplified.com/c/source-code/c-program-bubble-sort
 */
-void bubble_sort(uint32_t list[], long n);
+void bubble_sort(uint32_t list[], size_t n);
 
 /*! \brief Get an available client session.
     \return     client id or error

@@ -10,7 +10,7 @@
 static uint8_t clients_in_use[CLIENTS_MAX] = {0};
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void bubble_sort(uint32_t list[], long n)
+void bubble_sort(uint32_t list[], size_t n)
 {
     uint32_t c, d, t;
 

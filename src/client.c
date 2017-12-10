@@ -19,6 +19,7 @@ static int init_connection(const char *server_ip, const char *server_port);
 static int game_session(int sock);
 static void recv_data(int sock, struct game_state *gs);
 static void show_high_scores(int sock);
+static void finish(int sig);
 WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH]);
 
 int main(int argc, char *argv[])
@@ -28,6 +29,15 @@ int main(int argc, char *argv[])
     char *server_port = "30001";
     int32_t check_port = 0;
     int sock = 0;
+
+    if (signal(SIGINT, finish) == SIG_ERR) {
+        perror(0);
+        exit(1);
+    }
+    if (signal(SIGPIPE, finish) == SIG_ERR) {
+        perror(0);
+        exit(1);
+    }
 
     while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
         switch ( c ) {
@@ -334,6 +344,7 @@ static int game_session(int sock)
         exit(EXIT_FAILURE);
     }
 
+    close(sock);
     return 0;
 }
 
@@ -391,4 +402,14 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
     }
 
     return local_win;
+}
+
+/*! \brief  restore terminal 
+    \param  sig signal which has been triggered
+*/
+static void finish(int sig)
+{
+    (void)sig;
+    endwin();
+    exit(0);
 }

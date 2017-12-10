@@ -42,7 +42,12 @@ int main(int argc, char *argv[])
     struct client_data_t worker_thread_data[CLIENTS_MAX];
     struct sockaddr_in myaddr, clientaddr;
 
-    (void) signal(SIGINT, finish);
+    /* catch siginnt and cleanup before returning */
+    if (signal(SIGINT, finish) == SIG_ERR) {
+        perror(0);
+        exit(1);
+    }
+
     if(init_queue() != 0)
     {
         perror("pthread error");
@@ -102,6 +107,8 @@ int main(int argc, char *argv[])
         perror("listen");
         return 1;
     }
+
+    (void)printf("Ready for connection!\n");
 
     while(1)
     {

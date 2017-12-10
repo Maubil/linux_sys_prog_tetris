@@ -1,0 +1,152 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <pthread.h>
+#include <sys/time.h>
+#include <stdbool.h>
+#include "game.h"
+#include "common.h"
+
+static uint8_t clients_in_use[CLIENTS_MAX] = {0};
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+    /remark from: http://www.programmingsimplified.com/c/source-code/c-program-bubble-sort
+*/
+void bubble_sort(uint32_t list[], long n)
+{
+    uint32_t c, d, t;
+
+    for (c = 0 ; c < ( n - 1 ); c++)
+    {
+        for (d = 0 ; d < n - c - 1; d++)
+        {
+            if (list[d] > list[d+1])
+            {
+            /* Swapping */
+            t         = list[d];
+            list[d]   = list[d+1];
+            list[d+1] = t;
+            }
+        }
+    }
+}
+
+/*! \brief Get an available client session.
+    \return     client id or error
+*/
+int get_client_id(void)
+{
+    int next_client_id = INVALID_CLIENT_ID;
+
+    if(pthread_mutex_lock(&mutex) != 0)
+    {
+        perror("pthread_mutex_lock()");
+        exit(1);
+    }
+    for(size_t i = 0; i < CLIENTS_MAX; i++)
+    {
+        if(clients_in_use[i] == 0)
+        {
+            next_client_id = i;
+            clients_in_use[i] = 1;
+            break;
+        }
+    }
+    if(pthread_mutex_unlock(&mutex) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        exit(1);
+    }
+
+    return next_client_id;
+}
+
+/*! \brief release a client id.
+    \param client_id    id to release.
+*/
+void release_client_id(uint32_t client_id)
+{
+    if(client_id >= CLIENTS_MAX)
+    {
+        return;
+    }
+    if(pthread_mutex_lock(&mutex) != 0)
+    {
+        perror("pthread_mutex_lock()");
+        exit(1);
+    }
+    clients_in_use[client_id] = 0;
+    if(pthread_mutex_unlock(&mutex) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        exit(1);
+    }
+}
+
+bool client_running(void)
+{
+    bool running = false;
+
+    if(pthread_mutex_lock(&mutex) != 0)
+    {
+        perror("pthread_mutex_lock()");
+        exit(1);
+    }
+    for(size_t i = 0; i < CLIENTS_MAX; i++)
+    {
+        if(clients_in_use[i] == 1)
+        {
+            running = true;
+            break;
+        }
+    }
+    if(pthread_mutex_unlock(&mutex) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        exit(1);
+    }
+
+    return running;
+}
+
+/*! \brief Get the actual time and convert it into milliseconds.
+    \return The actual time in ms.
+*/
+uint32_t time_in_ms(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return (uint32_t)(((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
+}
+
+void serialize_data(char data[FIELD_SIZE + 16], struct game_state *gs)
+{
+    char *ptr = &(*gs->field)[0][0];
+
+    data[0] = (char)gs->phase;
+    data[1] = 0;
+    data[2] = 0;
+    data[3] = 0;
+
+    data[4] = gs->points & 0x000000ff;
+    data[5] = gs->points & 0x0000ff00;
+    data[6] = gs->points & 0x00ff0000;
+    data[7] = gs->points & 0xff000000;
+
+    data[8] = gs->level & 0x000000ff;
+    data[9] = gs->level & 0x0000ff00;
+    data[10] = gs->level & 0x00ff0000;
+    data[11] = gs->level & 0xff000000;
+
+    data[12] = gs->togo & 0x000000ff;
+    data[13] = gs->togo & 0x0000ff00;
+    data[14] = gs->togo & 0x00ff0000;
+    data[15] = gs->togo & 0xff000000;
+
+    for(size_t i = 0; i <= FIELD_SIZE; i++)
+    {
+        data[i + 16] = *ptr;
+        ptr++;
+    }
+}

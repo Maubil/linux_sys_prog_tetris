@@ -267,6 +267,15 @@ static int game_session(int sock)
 
         napms(50);
     }
+
+    user_input = 'q';
+    recv_data(sock, &gs);
+    if(send(sock, &user_input, 1, 0) < 0)
+    {
+        perror("send()");
+        exit(2);
+    }
+
     delwin(my_win);
     endwin();
     (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "loose", gs.points, gs.level);

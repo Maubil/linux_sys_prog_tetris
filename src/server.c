@@ -2,9 +2,6 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <netdb.h>
-#include <stdbool.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -28,13 +25,13 @@ struct client_data_t {
 
 static uint32_t high_score[NB_HIGH_SCORES_SHOWN] = {0};
 
+void *high_score_writer_task(void *ptr);
+void *child_task(void *ptr);
 static void print_usage(const char *prog_name);
 static int send_data(int sock, struct game_state *gs);
 static int child_process(int sock, uint32_t client_id);
 static void finish(int sig);
 static int send_high_scores(int sock);
-void *high_score_writer_task(void *ptr);
-void *child_thread(void *ptr);
 
 int main(int argc, char *argv[])
 {
@@ -109,30 +106,36 @@ int main(int argc, char *argv[])
     while(1)
     {
         socklen_t client_addr_len=sizeof(clientaddr);
+        int tmp_sock = accept(sockid, (struct sockaddr *)&clientaddr, &client_addr_len);
+
         int client_id = get_client_id();
         if(client_id != INVALID_CLIENT_ID)
         {
-            (void)printf("Accepting connections on client id %d!\n", client_id);
+            worker_thread_data[client_id].socket = tmp_sock;
             worker_thread_data[client_id].id = client_id;
-            worker_thread_data[client_id].socket = accept(sockid, (struct sockaddr *)&clientaddr, &client_addr_len);
 
             /* start a new thread for each new client until we reach CLIENTS_MAX */
-            if(pthread_create(&worker_thread_data[client_id].thread, NULL, child_thread, &worker_thread_data[client_id]) != 0)
+            if(pthread_create(&worker_thread_data[client_id].thread, NULL, child_task, &worker_thread_data[client_id]) != 0)
             {
                 close(worker_thread_data[client_id].socket);
                 perror("ptherad_create()");
                 return 1;
             }
         }
-        else{
-            (void)printf("no more clients available...\n");
+        else
+        {
+            close(tmp_sock);
+            (void)printf("no more sessions available...\n");
         }
     }
 
     return 0;
 }
 
-void *child_thread(void *ptr)
+/*! \brief print usage to sterr
+    \param prog_name    program name string
+*/
+void *child_task(void *ptr)
 {
     struct client_data_t *data = (struct client_data_t*)ptr;
 
@@ -148,6 +151,9 @@ void *child_thread(void *ptr)
     return NULL;
 }
 
+/*! \brief high score writer task.
+    \param prog_name    program name string
+*/
 void *high_score_writer_task(void *ptr) 
 {
     char * line = NULL;
@@ -159,20 +165,17 @@ void *high_score_writer_task(void *ptr)
 
     /* read high score file, sort data and save them to memory */
     FILE *fp = fopen(HIGH_SCORE_FILE, "r");
-    if(fp == NULL)
+    if(fp != NULL)
     {
-        perror("fopen()");
-        exit(1);
+        while (getline(&line, &len, fp) != -1 && i < NB_HIGH_SCORES_SHOWN) 
+        {
+            high_score[i++] = atoi(line);
+        }
+
+        fclose(fp);
+
+        bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
     }
-
-    while (getline(&line, &len, fp) != -1 && i < NB_HIGH_SCORES_SHOWN) 
-    {
-        high_score[i++] = atoi(line);
-    }
-
-    fclose(fp);
-
-    bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
 
     while(1)
     {
@@ -183,10 +186,10 @@ void *high_score_writer_task(void *ptr)
         }
 
         /* if the new value is at least bigger than the lowest high score entry */
-        if(data_in > high_score[0])
+        if(data_in > high_score[NB_HIGH_SCORES_SHOWN - 1])
         {
             /* add value and let bubble sort work */
-            high_score[0] = data_in;
+            high_score[NB_HIGH_SCORES_SHOWN - 1] = data_in;
             bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
         }
     }
@@ -224,6 +227,10 @@ static int send_data(int sock, struct game_state *gs)
     return 0;
 }
 
+/*! \brief serialize and send high score values, wait until client responds to continue.
+    \param sock     socket to connect to.
+    \return 0 on success, 1 on error.
+*/
 static int send_high_scores(int sock)
 {
     char recv_data = 0;
@@ -256,7 +263,7 @@ static int send_high_scores(int sock)
 /*! \brief This process is started by the child and handles the game session for each client.
     \param sock         socket to connect to the client.
     \param client_id    client id, or game session in use.
-    \return 0 on success, 1 on error
+    \return 0 on success, 1 on error.
 */
 static int child_process(int sock, uint32_t client_id)
 {
@@ -318,7 +325,7 @@ static int child_process(int sock, uint32_t client_id)
         }
         if(recv_data >= TET_MAX)
         {
-            (void)printf("User sent unknown character!\n");
+            (void)printf("Unknown character received, stopping game!\n");
             rc = 2; break;
         }
     }

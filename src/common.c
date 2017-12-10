@@ -10,9 +10,6 @@
 static uint8_t clients_in_use[CLIENTS_MAX] = {0};
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/*
-    /remark from: http://www.programmingsimplified.com/c/source-code/c-program-bubble-sort
-*/
 void bubble_sort(uint32_t list[], long n)
 {
     uint32_t c, d, t;
@@ -32,9 +29,6 @@ void bubble_sort(uint32_t list[], long n)
     }
 }
 
-/*! \brief Get an available client session.
-    \return     client id or error
-*/
 int get_client_id(void)
 {
     int next_client_id = INVALID_CLIENT_ID;
@@ -62,9 +56,6 @@ int get_client_id(void)
     return next_client_id;
 }
 
-/*! \brief release a client id.
-    \param client_id    id to release.
-*/
 void release_client_id(uint32_t client_id)
 {
     if(client_id >= CLIENTS_MAX)
@@ -84,35 +75,6 @@ void release_client_id(uint32_t client_id)
     }
 }
 
-bool client_running(void)
-{
-    bool running = false;
-
-    if(pthread_mutex_lock(&mutex) != 0)
-    {
-        perror("pthread_mutex_lock()");
-        exit(1);
-    }
-    for(size_t i = 0; i < CLIENTS_MAX; i++)
-    {
-        if(clients_in_use[i] == 1)
-        {
-            running = true;
-            break;
-        }
-    }
-    if(pthread_mutex_unlock(&mutex) != 0)
-    {
-        perror("pthread_mutex_unlock()");
-        exit(1);
-    }
-
-    return running;
-}
-
-/*! \brief Get the actual time and convert it into milliseconds.
-    \return The actual time in ms.
-*/
 uint32_t time_in_ms(void)
 {
     struct timeval tv;

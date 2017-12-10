@@ -69,6 +69,9 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+/*! \brief First communication with server, will fetch and show high scores.
+    \param sock     valid socket.
+*/
 static void show_high_scores(int sock)
 {
     char high_score[NB_HIGH_SCORES_SHOWN * 4] = {0};
@@ -76,17 +79,34 @@ static void show_high_scores(int sock)
     if(recv(sock, high_score, sizeof(high_score) / sizeof(high_score[0]), 0) < 0)
     {
         perror("recv()");
+        exit(EXIT_FAILURE);
     }
 
-    mvprintw(0, 0, "High scores. Beat them ;) !");
+    if(mvprintw(0, 0, "High scores. Beat them ;) !") == ERR)
+    {
+        perror("mvprintw()");
+        exit(EXIT_FAILURE);
+    }
 
     for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
-        mvprintw(i + 2, 0, "%02d. with a score of %u", i + 1, high_score[i * 4] | high_score[i * 4 + 1] | high_score[i * 4 + 2] | high_score[i * 4 + 3]);
+        if(mvprintw(i + 2, 0, "%02d. with a score of %u", i + 1, high_score[i * 4] | high_score[i * 4 + 1] | high_score[i * 4 + 2] | high_score[i * 4 + 3]) == ERR)
+        {
+            perror("mvprintw()");
+            exit(EXIT_FAILURE);
+        }
     }
-    mvprintw(NB_HIGH_SCORES_SHOWN + 3, 0, "Press any key to start the game!");
+    if(mvprintw(NB_HIGH_SCORES_SHOWN + 3, 0, "Press any key to start the game!") == ERR)
+    {
+        perror("mvprintw()");
+        exit(EXIT_FAILURE);
+    }
 
-    refresh();
+    if(refresh() == ERR)
+    {
+        perror("refresh()");
+        exit(EXIT_FAILURE);
+    }
 
     /* blocking call to wait on user input before starting the game */
     (void)getchar();
@@ -95,7 +115,7 @@ static void show_high_scores(int sock)
     if(send(sock, &data, 1, 0) < 0)
     {
         perror("send()");
-        exit(2);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -189,17 +209,49 @@ static int game_session(int sock)
     gs.field = &field;
 
     initscr();
-    cbreak();
-    noecho();
-    curs_set(0);
-    keypad(stdscr, TRUE);
-    nodelay(stdscr, TRUE);
-	refresh();
+    if(cbreak() == ERR)
+    {
+        perror("cbreak()");
+        exit(EXIT_FAILURE);
+    }
+    if(noecho() == ERR)
+    {
+        perror("noecho()");
+        exit(EXIT_FAILURE);
+    }
+    if(curs_set(0) == ERR)
+    {
+        perror("curs_set()");
+        exit(EXIT_FAILURE);
+    }
+    if(keypad(stdscr, TRUE) == ERR)
+    {
+        perror("keypad()");
+        exit(EXIT_FAILURE);
+    }
+    if(nodelay(stdscr, TRUE) == ERR)
+    {
+        perror("nodelay()");
+        exit(EXIT_FAILURE);
+    }
+	if(refresh() == ERR)
+    {
+        perror("refresh()");
+        exit(EXIT_FAILURE);
+    }
     getmaxyx(stdscr, row, col);
 
     show_high_scores(sock);
-    clear();
-    printw("row: %d\tcol: %d!", row, col);
+    if(clear() == ERR)
+    {
+        perror("clear()");
+        exit(EXIT_FAILURE);
+    }
+    if(printw("row: %d\tcol: %d!", row, col) == ERR)
+    {
+        perror("printw()");
+        exit(EXIT_FAILURE);
+    }
 
 	my_win = field_draw((const char (*)[FIELD_WIDTH])gs.field);
     char user_input = TET_VOID;
@@ -210,7 +262,6 @@ static int game_session(int sock)
 
         if(gs.phase == TET_LOSE)
         {
-            printf("YOU LOOSE\n");
             break;
         }
 
@@ -257,27 +308,32 @@ static int game_session(int sock)
         if(send(sock, &user_input, 1, 0) < 0)
         {
             perror("send()");
-            exit(2);
+            exit(EXIT_FAILURE);
         }
 
         delwin(my_win);
         my_win = field_draw((const char (*)[FIELD_WIDTH])gs.field);
-        mvprintw(row - 1, 0, "Level %d, score is %d, %d lines are needed until next level! State is %d", gs.level, gs.points, gs.togo, gs.phase);
+        if(mvprintw(row - 1, 0, "Level %d, score is %d, %d lines are needed until next level! State is %d", gs.level, gs.points, gs.togo, gs.phase) == ERR)
+        {
+            perror("mvprintw()");
+            exit(EXIT_FAILURE);
+        }
 
         napms(50);
     }
+
+    delwin(my_win);
+    endwin();
+    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "loose", gs.points, gs.level);
 
     user_input = 'q';
     recv_data(sock, &gs);
     if(send(sock, &user_input, 1, 0) < 0)
     {
         perror("send()");
-        exit(2);
+        exit(EXIT_FAILURE);
     }
 
-    delwin(my_win);
-    endwin();
-    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "loose", gs.points, gs.level);
     return 0;
 }
 
@@ -294,6 +350,7 @@ static void recv_data(int sock, struct game_state *gs)
     if((n = recv(sock, data, sizeof(data) / sizeof(data[0]), 0)) < 0)
     {
         perror("recv()");
+        exit(EXIT_FAILURE);
     }
 
     gs->phase  = (enum tet_phase)data[0];
@@ -320,10 +377,18 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
     {
         for(size_t j = 0; j < FIELD_WIDTH; j++)
         {
-            mvwaddch(local_win, i + 1, j + 1, field[i][j]);
+            if(mvwaddch(local_win, i + 1, j + 1, field[i][j]) == ERR)
+            {
+                perror("mvprintw()");
+                exit(EXIT_FAILURE);
+            }
         }
     }
-	wrefresh(local_win);
+	if(wrefresh(local_win) == ERR)
+    {
+        perror("mvprintw()");
+        exit(EXIT_FAILURE);
+    }
 
     return local_win;
 }

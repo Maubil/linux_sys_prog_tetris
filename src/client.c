@@ -10,34 +10,43 @@
 #include "game.h"
 
 #define BUF_SIZE 255
-#define WIN_POS_X 3
+#define WIN_POS_X 2
 #define WIN_POS_Y 1
+#define MIN_LINES ((int)(FIELD_HEIGHT + 7u))
+#define MIN_COLS  ((int)(FIELD_WIDTH + 25))
 #define NB_HIGH_SCORES_SHOWN (10)
+#define SERVER_DEFAULT_PORT "30001"
+#define SERVER_DEFAULT_IP   "127.0.0.1"
+
+WINDOW *my_win = NULL;
+struct game_state gs = {0};
+int sock = 0;
 
 static void print_usage(const char *prog_name);
 static int init_connection(const char *server_ip, const char *server_port);
-static int game_session(int sock);
-static void recv_data(int sock, struct game_state *gs);
-static void show_high_scores(int sock);
+static int game_session(void);
+static void recv_data(struct game_state *gs);
+static void show_high_scores(void);
 static void finish(int sig);
+static void handle_winch(int sig);
 WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH]);
 
 int main(int argc, char *argv[])
 {
     char c = 0;
-    char *server_ip = "127.0.0.1";
-    char *server_port = "30001";
+    char *server_ip = SERVER_DEFAULT_IP;
+    char *server_port = SERVER_DEFAULT_PORT;
     int32_t check_port = 0;
-    int sock = 0;
 
     if (signal(SIGINT, finish) == SIG_ERR) {
         perror(0);
         exit(1);
     }
-    if (signal(SIGPIPE, finish) == SIG_ERR) {
-        perror(0);
-        exit(1);
-    }
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sa.sa_handler = handle_winch;
+    sigaction(SIGWINCH, &sa, NULL);
 
     while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
         switch ( c ) {
@@ -55,6 +64,7 @@ int main(int argc, char *argv[])
                     print_usage(argv[0]);
                     return 1;
                 }
+                server_port = optarg;
                 break;
 
             case 'h':
@@ -72,17 +82,15 @@ int main(int argc, char *argv[])
     /* we are ready to start the game */
     sock = init_connection(server_ip, server_port);
 
-    uint32_t rc = game_session(sock);
-    (void)rc;
+    int rc = game_session();
 
-    close(sock);
-    return 0;
+    finish(0);
+    return rc;
 }
 
 /*! \brief First communication with server, will fetch and show high scores.
-    \param sock     valid socket.
 */
-static void show_high_scores(int sock)
+static void show_high_scores(void)
 {
     char high_score[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
@@ -132,7 +140,6 @@ static void show_high_scores(int sock)
 /*! \brief Initialize the connection to the remote server.
     \param server_ip    server IP string formatted.
     \param server_port  server port string formatted.
-    \return socket number
     \other  inspired by the getaddrinfo manual example.
 */
 static int init_connection(const char *server_ip, const char *server_port)
@@ -203,17 +210,12 @@ static void print_usage(const char *prog_name)
 }
 
 /*! \brief Start a game session.
-    \param sock     socket to use.
     \return 0 on success 1 on error
 */
-static int game_session(int sock)
+static int game_session(void)
 {
     char field[FIELD_HEIGHT][FIELD_WIDTH];
-    struct game_state gs = {0};
-    WINDOW *my_win = NULL;
     int ch = 0;
-    int row = 0;
-    int col = 0;
     
     memset(field, ' ', FIELD_SIZE);
     gs.field = &field;
@@ -249,17 +251,12 @@ static int game_session(int sock)
         perror("refresh()");
         exit(EXIT_FAILURE);
     }
-    getmaxyx(stdscr, row, col);
+    
 
-    show_high_scores(sock);
+    show_high_scores();
     if(clear() == ERR)
     {
         perror("clear()");
-        exit(EXIT_FAILURE);
-    }
-    if(printw("row: %d\tcol: %d!", row, col) == ERR)
-    {
-        perror("printw()");
         exit(EXIT_FAILURE);
     }
 
@@ -268,7 +265,7 @@ static int game_session(int sock)
 
     while ((ch = getch()) != 'q')
     {
-        recv_data(sock, &gs);
+        recv_data(&gs);
 
         if(gs.phase == TET_LOSE)
         {
@@ -322,37 +319,29 @@ static int game_session(int sock)
         }
 
         delwin(my_win);
-        my_win = field_draw((const char (*)[FIELD_WIDTH])gs.field);
-        if(mvprintw(row - 1, 0, "Level %d, score is %d, %d lines are needed until next level! State is %d", gs.level, gs.points, gs.togo, gs.phase) == ERR)
+        if(mvprintw(0, 0, "lines: %d\tcol: %d!", LINES, COLS) == ERR)
+        {
+            perror("printw()");
+            break;
+        }
+        if(mvprintw(LINES - 2, 0, "Level %d, score is %d, %d lines\n are needed until next level!", gs.level, gs.points, gs.togo) == ERR)
         {
             perror("mvprintw()");
-            exit(EXIT_FAILURE);
+            break;
         }
+        refresh();
+        my_win = field_draw((const char (*)[FIELD_WIDTH])gs.field);
 
         napms(50);
     }
 
-    delwin(my_win);
-    endwin();
-    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "loose", gs.points, gs.level);
-
-    user_input = 'q';
-    recv_data(sock, &gs);
-    if(send(sock, &user_input, 1, 0) < 0)
-    {
-        perror("send()");
-        exit(EXIT_FAILURE);
-    }
-
-    close(sock);
     return 0;
 }
 
 /*! \brief receive data and deserialize it.
-    \param sock socket to receive from.
     \param gs   game status pointer.
 */
-static void recv_data(int sock, struct game_state *gs)
+static void recv_data(struct game_state *gs)
 {
     char data[FIELD_SIZE + 16] = {0};
     char *ptr = &(*gs->field)[0][0];
@@ -390,14 +379,14 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
         {
             if(mvwaddch(local_win, i + 1, j + 1, field[i][j]) == ERR)
             {
-                perror("mvprintw()");
+                perror("mvwaddch()");
                 exit(EXIT_FAILURE);
             }
         }
     }
 	if(wrefresh(local_win) == ERR)
     {
-        perror("mvprintw()");
+        perror("wrefresh()");
         exit(EXIT_FAILURE);
     }
 
@@ -409,7 +398,28 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
 */
 static void finish(int sig)
 {
-    (void)sig;
+    delwin(my_win);
     endwin();
+
+    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "lose", gs.points, gs.level);
+
+    const char user_input = 'q';
+    recv_data(&gs);
+    if(send(sock, &user_input, 1, 0) < 0)
+    {
+        perror("send()");
+        exit(EXIT_FAILURE);
+    }
+
+    close(sock);
     exit(0);
+}
+
+static void handle_winch(int sig)
+{
+    /* if window goes beyond minimal size we stop the game */
+    if(COLS < MIN_COLS || LINES < MIN_LINES)
+    {
+        finish(0);
+    }
 }

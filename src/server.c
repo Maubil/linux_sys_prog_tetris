@@ -16,6 +16,7 @@
 #define DELAY_MS (10)
 #define NB_HIGH_SCORES_SHOWN (10)
 #define HIGH_SCORE_FILE ("./high_scores.txt")
+#define DEFAULT_PORT    30001
 
 struct client_data_t {
     int socket;
@@ -37,7 +38,7 @@ int main(int argc, char *argv[])
 {
     char c = 0;
     int sockid = 0;
-    int check_port = 30001;
+    int check_port = DEFAULT_PORT;
     pthread_t thread1;
     struct client_data_t worker_thread_data[CLIENTS_MAX];
     struct sockaddr_in myaddr, clientaddr;
@@ -60,7 +61,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
+    while ( (c = getopt(argc, argv, "hp:")) != -1 ) {
         switch ( c ) {
             case 'p':
                 /* user passed server port */
@@ -85,7 +86,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    sockid = socket(AF_INET, SOCK_STREAM, 0);
+    sockid = socket(AF_INET6, SOCK_STREAM, 0);
     if(sockid==-1)
     {
         perror("socket");
@@ -93,7 +94,7 @@ int main(int argc, char *argv[])
     }
     
     memset(&myaddr, 0, sizeof(myaddr));
-    myaddr.sin_family=AF_INET;
+    myaddr.sin_family=AF_INET6;
     myaddr.sin_port=htons(check_port);
     myaddr.sin_addr.s_addr=htonl(INADDR_ANY);
     socklen_t my_addr_len=sizeof(myaddr);

@@ -28,7 +28,6 @@ static int game_session(void);
 static void recv_data(struct game_state *gs);
 static void show_high_scores(void);
 static void finish(int sig);
-static void handle_winch(int sig);
 WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH]);
 
 int main(int argc, char *argv[])
@@ -42,11 +41,6 @@ int main(int argc, char *argv[])
         perror(0);
         exit(1);
     }
-
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(struct sigaction));
-    sa.sa_handler = handle_winch;
-    sigaction(SIGWINCH, &sa, NULL);
 
     while ( (c = getopt(argc, argv, "hi:p:")) != -1 ) {
         switch ( c ) {
@@ -287,7 +281,7 @@ static int game_session(void)
                 user_input = TET_RIGHT;
                 break;
             case 'r':
-                user_input = TET_RESTART;
+                user_input = TET_RESTART; // bug
                 break;
             case ' ':
                 user_input = TET_DOWN_INSTANT;
@@ -299,7 +293,7 @@ static int game_session(void)
                 user_input = TET_CHEAT;
                 break;
             case 'p':
-                user_input = TET_PAUSE;
+                user_input = TET_PAUSE; // bug
                 break;
             case 'f':
                 user_input = TET_FASTER;
@@ -398,13 +392,7 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
 */
 static void finish(int sig)
 {
-    delwin(my_win);
-    endwin();
-
-    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "lose", gs.points, gs.level);
-
     const char user_input = 'q';
-    recv_data(&gs);
     if(send(sock, &user_input, 1, 0) < 0)
     {
         perror("send()");
@@ -412,14 +400,11 @@ static void finish(int sig)
     }
 
     close(sock);
-    exit(0);
-}
 
-static void handle_winch(int sig)
-{
-    /* if window goes beyond minimal size we stop the game */
-    if(COLS < MIN_COLS || LINES < MIN_LINES)
-    {
-        finish(0);
-    }
+    delwin(my_win);
+    endwin();
+
+    (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "lose", gs.points, gs.level);
+
+    exit(0);
 }

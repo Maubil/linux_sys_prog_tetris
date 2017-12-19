@@ -88,15 +88,15 @@ uint32_t init_queue(void)
 
 uint32_t cleanup_queue(void)
 {
-    if(pthread_mutex_destroy(&lock) != 0)
-    {
-      return 1;
-    }
     if(pthread_cond_destroy(&nonempty) != 0)
     {
       return 1;
     }
     if(pthread_cond_destroy(&nonfull) != 0)
+    {
+      return 1;
+    }
+    if(pthread_mutex_destroy(&lock) != 0)
     {
       return 1;
     }

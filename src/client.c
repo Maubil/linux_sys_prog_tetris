@@ -281,7 +281,7 @@ static int game_session(void)
                 user_input = TET_RIGHT;
                 break;
             case 'r':
-                user_input = TET_RESTART; // bug
+                user_input = TET_RESTART;
                 break;
             case ' ':
                 user_input = TET_DOWN_INSTANT;
@@ -293,7 +293,7 @@ static int game_session(void)
                 user_input = TET_CHEAT;
                 break;
             case 'p':
-                user_input = TET_PAUSE; // bug
+                user_input = TET_PAUSE;
                 break;
             case 'f':
                 user_input = TET_FASTER;

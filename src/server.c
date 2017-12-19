@@ -25,6 +25,7 @@ struct client_data_t {
 };
 
 static uint32_t high_score[NB_HIGH_SCORES_SHOWN] = {0};
+static pthread_mutex_t lock;
 
 void *high_score_writer_task(void *ptr);
 void *child_task(void *ptr);
@@ -41,12 +42,18 @@ int main(int argc, char *argv[])
     int check_port = DEFAULT_PORT;
     pthread_t thread1;
     struct client_data_t worker_thread_data[CLIENTS_MAX];
-    struct sockaddr_in myaddr, clientaddr;
+    struct sockaddr_in6 myaddr, clientaddr;
 
     /* catch siginnt and cleanup before returning */
     if (signal(SIGINT, finish) == SIG_ERR) {
         perror(0);
         exit(1);
+    }
+
+    if(pthread_mutex_init(&lock, NULL) != 0)
+    {
+        perror("pthread_mutex_init()");
+        return 1;
     }
 
     if(init_queue() != 0)
@@ -94,9 +101,9 @@ int main(int argc, char *argv[])
     }
     
     memset(&myaddr, 0, sizeof(myaddr));
-    myaddr.sin_family=AF_INET6;
-    myaddr.sin_port=htons(check_port);
-    myaddr.sin_addr.s_addr=htonl(INADDR_ANY);
+    myaddr.sin6_family=AF_INET6;
+    myaddr.sin6_port=htons(check_port);
+    myaddr.sin6_addr=in6addr_any;
     socklen_t my_addr_len=sizeof(myaddr);
     if(bind(sockid, (struct sockaddr*)&myaddr, my_addr_len) == -1)
     {
@@ -171,6 +178,11 @@ void *high_score_writer_task(void *ptr)
 
     (void)ptr;
 
+    if(pthread_mutex_lock(&lock) != 0)
+    {
+        perror("pthread_mutex_lock()");
+        return NULL;
+    }
     /* read high score file, sort data and save them to memory */
     FILE *fp = fopen(HIGH_SCORE_FILE, "r");
     if(fp != NULL)
@@ -184,6 +196,11 @@ void *high_score_writer_task(void *ptr)
 
         bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
     }
+    if(pthread_mutex_unlock(&lock) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        return NULL;
+    }
 
     while(1)
     {
@@ -193,12 +210,22 @@ void *high_score_writer_task(void *ptr)
             break;
         }
 
+        if(pthread_mutex_lock(&lock) != 0)
+        {
+            perror("pthread_mutex_lock()");
+            return NULL;
+        }
         /* if the new value is at least bigger than the lowest high score entry */
         if(data_in > high_score[NB_HIGH_SCORES_SHOWN - 1])
         {
             /* add value and let bubble sort work */
             high_score[NB_HIGH_SCORES_SHOWN - 1] = data_in;
             bubble_sort(high_score, NB_HIGH_SCORES_SHOWN);
+        }
+        if(pthread_mutex_unlock(&lock) != 0)
+        {
+            perror("pthread_mutex_unlock()");
+            return NULL;
         }
     }
 
@@ -224,9 +251,18 @@ static void print_usage(const char *prog_name)
 static int send_data(int sock, struct game_state *gs)
 {
     char data[FIELD_SIZE + 16] = {0};
+    static struct game_state old_gs = {0};
 
-    serialize_data(data, gs);
- 
+    if(gs == NULL)
+    {
+        serialize_data(data, &old_gs);
+    }
+    else
+    {
+        memcpy(&old_gs, gs, sizeof(struct game_state));
+        serialize_data(data, gs);
+    }
+    
     if(send(sock, data, FIELD_SIZE + 16, MSG_NOSIGNAL) < 0)
     {
         perror("send()");
@@ -244,12 +280,22 @@ static int send_high_scores(int sock)
     char recv_data = 0;
     char scores[NB_HIGH_SCORES_SHOWN * 4] = {0};
 
+    if(pthread_mutex_lock(&lock) != 0)
+    {
+        perror("pthread_mutex_lock()");
+        return 1;
+    }
     for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
         scores[i * 4] = (char)high_score[i];
         scores[(i * 4) + 1] = (char)(high_score[i] >> 8);
         scores[(i * 4) + 2] = (char)(high_score[i] >> 16);
         scores[(i * 4) + 3] = (char)(high_score[i] >> 24);
+    }
+    if(pthread_mutex_unlock(&lock) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        return 1;
     }
 
     if(send(sock, scores, sizeof(scores) / sizeof(scores[0]), MSG_NOSIGNAL) < 0)
@@ -275,7 +321,7 @@ static int send_high_scores(int sock)
 */
 static int child_process(int sock, uint32_t client_id)
 {
-    char recv_data = 0;
+    unsigned char recv_data = 0;
     int rc = 1;
     struct game_state *gs = NULL;
     uint32_t last_handling = time_in_ms();
@@ -296,11 +342,7 @@ static int child_process(int sock, uint32_t client_id)
 
     while(1)
     {
-        gs = handle_input(client_id, recv_data);
-        if(gs == NULL)
-        {
-            rc = 1; break;
-        }
+        gs = handle_input(client_id, (enum tet_input)recv_data);
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
             perror("nanosleep()");
@@ -315,7 +357,7 @@ static int child_process(int sock, uint32_t client_id)
         {
             rc = 2; break;
         }
-        if (gs->phase == TET_LOSE || gs->phase == TET_WIN) 
+        if (gs != NULL && (gs->phase == TET_LOSE || gs->phase == TET_WIN)) 
         {
             (void)printf("Player %s with %u points in level %u.\n",
                     gs->phase == TET_WIN ? "wins" : "loses", gs->points, gs->level);
@@ -326,15 +368,15 @@ static int child_process(int sock, uint32_t client_id)
             perror("recv()");
             rc = 2; break;
         }
+        if(recv_data >= (unsigned char)TET_MAX)
+        {
+            (void)printf("Unknown character received, stopping game!\n");
+            rc = 2; break;
+        }
         if(nanosleep(&(struct timespec){0, DELAY_MS*1000*1000}, NULL) != 0)
         {
             perror("nanosleep()");
             rc = 1; break;
-        }
-        if(recv_data >= TET_MAX)
-        {
-            (void)printf("Unknown character received, stopping game!\n");
-            rc = 2; break;
         }
     }
     if(produce(gs->points) != 0)
@@ -358,9 +400,19 @@ static void finish(int sig)
         exit(1);
     }
 
+    if(pthread_mutex_lock(&lock) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        exit(1);
+    }
     for(size_t i = 0; i < NB_HIGH_SCORES_SHOWN; i++)
     {
         (void)fprintf(fp, "%u\n", high_score[i]);
+    }
+    if(pthread_mutex_unlock(&lock) != 0)
+    {
+        perror("pthread_mutex_unlock()");
+        exit(1);
     }
 
     fclose(fp);
@@ -368,6 +420,8 @@ static void finish(int sig)
     (void)cleanup_queue();
 
     (void)printf("Data saved. Exiting!!\n");
+
+    (void)pthread_mutex_destroy(&lock);
 
     exit(0);
 }

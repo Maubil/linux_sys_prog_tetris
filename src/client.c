@@ -8,6 +8,7 @@
 #include <ncurses.h>
 #include <signal.h>
 #include "game.h"
+#include "common.h"
 
 #define BUF_SIZE 255
 #define WIN_POS_X 2
@@ -17,6 +18,7 @@
 #define NB_HIGH_SCORES_SHOWN (10)
 #define SERVER_DEFAULT_PORT "30001"
 #define SERVER_DEFAULT_IP   "127.0.0.1"
+#define CLEAR_SCREEN_TIME   3000
 
 WINDOW *my_win = NULL;
 struct game_state gs = {0};
@@ -209,6 +211,7 @@ static void print_usage(const char *prog_name)
 static int game_session(void)
 {
     char field[FIELD_HEIGHT][FIELD_WIDTH];
+    uint32_t last_handling = time_in_ms();
     int ch = 0;
     
     memset(field, ' ', FIELD_SIZE);
@@ -313,6 +316,13 @@ static int game_session(void)
         }
 
         delwin(my_win);
+
+        /* every n seconds, clear the screen completely to remove possible residual text messages (due to reisizes...) */
+        if((time_in_ms() - last_handling) > CLEAR_SCREEN_TIME)
+        {
+            clear();
+            last_handling = time_in_ms();
+        }
         if(mvprintw(0, 0, "lines: %d\tcol: %d!", LINES, COLS) == ERR)
         {
             perror("printw()");

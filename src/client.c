@@ -402,6 +402,7 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
 */
 static void finish(int sig)
 {
+    (void)sig;
     const char user_input = 'q';
     if(send(sock, &user_input, 1, 0) < 0)
     {

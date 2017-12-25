@@ -19,6 +19,7 @@
 #define SERVER_DEFAULT_PORT "30001"
 #define SERVER_DEFAULT_IP   "127.0.0.1"
 #define CLEAR_SCREEN_TIME   3000
+#define NCURSES_ERR         ((int)0x0FFF1111)
 
 WINDOW *my_win = NULL;
 struct game_state gs = {0};
@@ -326,12 +327,12 @@ static int game_session(void)
         if(mvprintw(0, 0, "lines: %d\tcol: %d!", LINES, COLS) == ERR)
         {
             perror("printw()");
-            break;
+            finish(NCURSES_ERR);
         }
         if(mvprintw(LINES - 2, 0, "Level %d, score is %d, %d lines\n are needed until next level!", gs.level, gs.points, gs.togo) == ERR)
         {
             perror("mvprintw()");
-            break;
+            finish(NCURSES_ERR);
         }
         refresh();
         my_win = field_draw((const char (*)[FIELD_WIDTH])gs.field);
@@ -402,7 +403,6 @@ WINDOW *field_draw(const char field[FIELD_HEIGHT][FIELD_WIDTH])
 */
 static void finish(int sig)
 {
-    (void)sig;
     const char user_input = 'q';
     if(send(sock, &user_input, 1, 0) < 0)
     {
@@ -416,6 +416,10 @@ static void finish(int sig)
     endwin();
 
     (void)printf("You %s with %u points in level %u.\n", gs.phase == TET_WIN ? "won" : "lose", gs.points, gs.level);
+    if(sig == NCURSES_ERR)
+    {
+        (void)printf("Window is too small to play!\n");
+    }
 
     exit(0);
 }
